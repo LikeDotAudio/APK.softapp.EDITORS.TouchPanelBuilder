@@ -1,0 +1,21 @@
+{
+  "name": "touch-panel-builder",
+  "version": "1.0.0",
+  "description": "Touch Panel & Control Surface Designer on APK.audio",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "keywords": [
+    "audio",
+    "touchpanel",
+    "surface",
+    "controls",
+    "fader",
+    "knob",
+    "crestron",
+    "qsys"
+  ],
+  "author": "Anthony Kuzub",
+  "license": "MIT"
+}

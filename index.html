@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Touch Panel & Control Surface Builder — APK.audio</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>🎛️</span>
+      <span>Touch Panel & Surface Designer</span>
+      <span style="font-size:0.75rem; background:#1e293b; color:#38bdf8; padding:2px 8px; border-radius:12px;">APK:Softapps</span>
+    </div>
+    <div class="actions">
+      <button id="btn-clear">Clear</button>
+      <button class="primary" id="btn-export">Export JSON</button>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div class="palette">
+      <h3>Controls Palette</h3>
+      <div id="palette-items"></div>
+    </div>
+
+    <div class="canvas-viewport">
+      <div class="touchpanel-frame">
+        <div class="touchpanel-bezel-title">APK TOUCHPANEL 10-INCH · 1280×800</div>
+        <div class="touchpanel-surface" id="touchpanel-surface"></div>
+      </div>
+    </div>
+
+    <div class="inspector">
+      <h3>Properties</h3>
+      <div id="inspector-content"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { TouchPanelApp } from './js/app.js';
+    window.app = new TouchPanelApp();
+  </script>
+</body>
+</html>

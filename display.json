@@ -1,0 +1,8 @@
+{
+  "name": "Touch Panel & Control Surface Builder",
+  "icon": "🎛️",
+  "group": "Design",
+  "subGroup": "Surfaces & Controls",
+  "description": "Touch Panel & Control Surface Designer: interactive canvas for designing custom touch panels, Crestron/Q-SYS/Extron faceplates, tactile controls (faders, rotary knobs, meters, lamps, buttons, rockers, tiles), page tabs, and control bus mapping.",
+  "app": "APK:Softapps/EDITORS/EDITORS.TouchPanelBuilder/index.html"
+}
