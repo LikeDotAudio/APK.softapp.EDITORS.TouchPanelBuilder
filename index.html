@@ -3,44 +3,223 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Touch Panel & Control Surface Builder — APK.audio</title>
-  <link rel="stylesheet" href="css/style.css">
+  <title>Touch Panel & Surface Designer · Standalone Block Editor</title>
+  <link rel="stylesheet" href="./css/theme.css">
+  <style>
+    .touchpanel-container {
+      display: grid;
+      grid-template-rows: auto 1fr 240px;
+      height: calc(100vh - 40px);
+      overflow: hidden;
+    }
+
+    .top-toolbar {
+      background: var(--osc-bg-surface);
+      border-bottom: 1px solid var(--osc-border-default);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .form-group-inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-group-inline label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--osc-text-muted);
+      text-transform: uppercase;
+    }
+
+    .palette-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .canvas-stage {
+      background: radial-gradient(circle at 50% 50%, #151F38 0%, #080C16 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .touchpanel-bezel {
+      background: #000;
+      border: 12px solid #161F36;
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.8);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .touchpanel-surface {
+      width: 720px;
+      height: 450px;
+      background: #0A0F1D;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .data-grid-panel {
+      background: var(--osc-bg-surface);
+      border-top: 1px solid var(--osc-border-default);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .data-grid-header {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--osc-border-default);
+      background: var(--osc-bg-surface-hover);
+    }
+
+    .data-table-container {
+      flex: 1;
+      overflow: auto;
+    }
+
+    table.widget-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    table.widget-table th {
+      position: sticky;
+      top: 0;
+      background: var(--osc-bg-input);
+      color: var(--osc-text-muted);
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--osc-border-default);
+      font-weight: 600;
+      z-index: 2;
+    }
+
+    table.widget-table td {
+      padding: 2px 4px;
+      border-bottom: 1px solid var(--osc-border-default);
+    }
+
+    .cell-input {
+      width: 100%;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--osc-text-primary);
+      padding: 4px 6px;
+      font-size: 11px;
+      border-radius: 2px;
+      font-family: inherit;
+    }
+
+    .cell-input:focus {
+      background: var(--osc-bg-input);
+      border-color: var(--osc-accent-primary);
+      outline: none;
+    }
+
+    .text-center {
+      text-align: center;
+    }
+
+    .col-idx {
+      width: 45px;
+    }
+
+    .col-actions {
+      width: 45px;
+      text-align: center;
+    }
+  </style>
 </head>
-<body>
-  <header>
-    <div class="brand">
-      <span>🎛️</span>
-      <span>Touch Panel & Surface Designer</span>
-      <span style="font-size:0.75rem; background:#1e293b; color:#38bdf8; padding:2px 8px; border-radius:12px;">APK:Softapps</span>
+<body class="theme-deep-horizon">
+  <header class="app-window-header">
+    <div class="window-title-group">
+      <span class="window-dot"></span>
+      <span class="window-title">Touch Panel & Control Surface Designer</span>
+      <span class="window-pill" id="block-tag">STANDALONE BLOCK EDITOR</span>
     </div>
-    <div class="actions">
-      <button id="btn-clear">Clear</button>
-      <button class="primary" id="btn-export">Export JSON</button>
+    <div class="window-actions">
+      <button class="btn btn-secondary" id="btn-sync-discovered" title="Load live touch surface from Discovered Project">
+        <span class="btn-icon">⚡</span> Discovered
+      </button>
+      <button class="btn btn-secondary" id="btn-open" title="Open block JSON">
+        <span class="btn-icon">📂</span> Open
+      </button>
+      <button class="btn btn-primary" id="btn-save" title="Save & Return modified block to caller">
+        <span class="btn-icon">💾</span> Save & Return
+      </button>
+      <button class="btn btn-icon" id="btn-close" title="Close Editor">✕</button>
     </div>
   </header>
 
-  <div class="main-container">
-    <div class="palette">
-      <h3>Controls Palette</h3>
-      <div id="palette-items"></div>
-    </div>
+  <div class="touchpanel-container">
+    <div class="top-toolbar">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div class="form-group-inline">
+          <label for="input-panel-name">Surface Tag:</label>
+          <input type="text" id="input-panel-name" class="input" style="width:160px;" value="TP-STAGE-01">
+        </div>
+        <div class="form-group-inline">
+          <label for="select-screen-preset">Hardware Glass:</label>
+          <select id="select-screen-preset" class="input" style="width:220px;"></select>
+        </div>
+      </div>
 
-    <div class="canvas-viewport">
-      <div class="touchpanel-frame">
-        <div class="touchpanel-bezel-title">APK TOUCHPANEL 10-INCH · 1280×800</div>
-        <div class="touchpanel-surface" id="touchpanel-surface"></div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:10px; font-weight:700; color:var(--osc-text-muted); text-transform:uppercase;">Add Widget:</span>
+        <div class="palette-container" id="palette-items"></div>
       </div>
     </div>
 
-    <div class="inspector">
-      <h3>Properties</h3>
-      <div id="inspector-content"></div>
-    </div>
+    <main class="canvas-stage">
+      <div class="touchpanel-bezel">
+        <div class="touchpanel-surface" id="touchpanel-surface"></div>
+      </div>
+    </main>
+
+    <section class="data-grid-panel">
+      <div class="data-grid-header">
+        <span style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--osc-text-muted);">
+          Widgets & OSC / Control Address Schedule (Live Editable)
+        </span>
+        <button class="btn btn-primary btn-sm" id="btn-add-widget">+ Add Widget</button>
+      </div>
+      <div class="data-table-container">
+        <table class="widget-table">
+          <thead>
+            <tr>
+              <th class="col-idx text-center">#</th>
+              <th>Widget Label</th>
+              <th style="width:110px;">Type</th>
+              <th>OSC / MIDI Address</th>
+              <th style="width:60px;" class="text-center">Ch</th>
+              <th style="width:55px;" class="text-center">X</th>
+              <th style="width:55px;" class="text-center">Y</th>
+              <th style="width:55px;" class="text-center">W</th>
+              <th style="width:55px;" class="text-center">H</th>
+              <th class="col-actions">Act</th>
+            </tr>
+          </thead>
+          <tbody id="widget-table-body"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
-  <script type="module">
-    import { TouchPanelApp } from './js/app.js';
-    window.app = new TouchPanelApp();
-  </script>
+  <script type="module" src="./js/touchPanelApp.js"></script>
 </body>
 </html>
