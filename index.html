@@ -612,7 +612,13 @@
       <button class="btn btn-secondary" id="btn-link" title="Copy this panel's link — the address bar names the device and the page, so it can be shared or bookmarked">
         <span class="btn-icon">🔗</span> Link
       </button>
-      <button class="btn btn-secondary" id="btn-open" title="Open block JSON">
+      <button class="btn btn-secondary" id="btn-engine-preview" title="See the panel drawn by the real widget engine">
+        <span class="btn-icon">▶</span> Engine Preview
+      </button>
+      <button class="btn btn-secondary" id="btn-export-frame" title="Download the panel as a Gui_Frames OcaBin frame the OS runs">
+        <span class="btn-icon">⇩</span> Export Frame
+      </button>
+      <button class="btn btn-secondary" id="btn-open" title="Open a panel block, or any Gui_Frames frame">
         <span class="btn-icon">📂</span> Open
       </button>
       <button class="btn btn-primary" id="btn-save" title="Save & Return modified block to caller">
@@ -729,6 +735,16 @@
   <script src="/FrontEnd/shared/apk-bus.js"></script>
   <script src="./vendor/apk-softapp/apk-softapp.js"></script>
   <script src="./vendor/apk-table/apk-table.js"></script>
+  <div class="look-lib" id="engine-preview" hidden>
+    <div class="look-lib-head">
+      <b>▶ Engine Preview</b>
+      <span class="muted-cell">The panel as the OS draws it — one block per page, real widgets. Positions follow a 20 px grid (the engine has no absolute placement yet: ROAD-3499).</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" id="engine-close">✕ Close</button>
+    </div>
+    <div class="look-live" id="engine-host"></div>
+  </div>
+
   <div class="look-lib" id="look-lib" hidden>
     <div class="look-lib-head">
       <b>📚 Look Library</b>

@@ -44,6 +44,11 @@ const FRAME_TO_CONTROL = {
   _GuiMeter: 'meter',
   _Meter: 'meter',
   _VuMeter: 'vu',
+  _NeedleVUMeter: 'vu',
+  _CustomLTP: 'ltp',
+  _MDP: 'mdp',
+  _CMDP: 'cmdp',
+  _HighVisButton: 'tile',
 };
 const CONTAINERS = new Set(['OcaBin', 'OcaBlock']);
 
@@ -52,6 +57,7 @@ const SIZE = {
   knob: [90, 100], fader: [70, 220], faderH: [240, 60], button: [130, 60],
   selector: [130, 130], meter: [45, 220], vu: [160, 110], readout: [170, 50],
   rig: [230, 0], nab: [230, 0],
+  ltp: [70, 220], mdp: [180, 180], cmdp: [220, 220], tile: [140, 90],
 };
 
 const MARGIN = 12;

@@ -10,6 +10,7 @@ import {
 import { VINTAGE_LOOKS, loadLibraryLooks, groupLooks, lookFromField } from './lookLibrary.js';
 import { cloneControl, isHold, HOLD_MS } from './copyControl.js';
 import { paletteOf, grabBag, paletteFilter, deviceIO } from './palettes.js';
+import { panelToFrame, frameToPanel } from './frameExport.js';
 import {
   ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType,
   humanLabel, bindingFor, matchesQuery,
@@ -26,6 +27,8 @@ export const SCREEN_PRESETS = [
 // Rows drawn in the variable column before "show more" — the DOM, not the
 // library, is the limit: one Generator model alone carries over a thousand.
 const VAR_PAGE = 1500;
+const isFrame = (o) => !!o && typeof o === 'object' && (o.type === 'OcaBin'
+  || Object.values(o).some(v => v && typeof v === 'object' && v.type === 'OcaBin'));
 const DRAG_MIME = 'application/x-apk-variable';
 const GRAB_MIME = 'application/x-apk-grabbag';
 
@@ -424,6 +427,9 @@ export class TouchPanelApp {
 
   attachEvents() {
     this.btnOpen?.addEventListener('click', () => this.promptOpen());
+    document.getElementById('btn-export-frame')?.addEventListener('click', () => this.exportFrame());
+    document.getElementById('btn-engine-preview')?.addEventListener('click', () => this.openEnginePreview());
+    document.getElementById('engine-close')?.addEventListener('click', () => { document.getElementById('engine-preview').hidden = true; });
     document.getElementById('btn-link')?.addEventListener('click', () => this.copyLink());
     this.btnSave?.addEventListener('click', () => this.saveBlock());
     this.btnClose?.addEventListener('click', () => { if (this.host) this.host.close(); });
@@ -1913,6 +1919,44 @@ export class TouchPanelApp {
     });
   }
 
+  // THE PANEL AS A FRAME the OS runs (frameExport.js): one OcaBlock per page,
+  // one field per control, drawn by the real widget engine.
+  currentFrame() {
+    return panelToFrame(this.panel, (w) => this.effectiveStyle(w));
+  }
+
+  exportFrame() {
+    const frame = this.currentFrame();
+    const name = String(this.panel.name || 'touch_panel').replace(/[^A-Za-z0-9._-]+/g, '_');
+    const url = URL.createObjectURL(new Blob([JSON.stringify(frame, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.frame.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // The whole panel drawn by the real widget engine (FrontEnd/apkos-frame-host.html).
+  openEnginePreview() {
+    const box = document.getElementById('engine-preview');
+    const host = document.getElementById('engine-host');
+    if (!box || !host) return;
+    box.hidden = false;
+    const post = () => frame.contentWindow?.postMessage({
+      type: 'apkos:render-frame', layoutJson: this.currentFrame(), filePath: `TouchPanels/${this.panel.name || 'panel'}.json`,
+    }, '*');
+    let frame = host.querySelector('iframe');
+    if (!frame) {
+      host.innerHTML = '<iframe title="Engine preview" src="/FrontEnd/apkos-frame-host.html"></iframe>';
+      frame = host.querySelector('iframe');
+      window.addEventListener('message', (e) => {
+        if (e.data?.type === 'apkos:frame-host-ready' && e.source === frame.contentWindow) post();
+      });
+    } else {
+      post();
+    }
+  }
+
   promptOpen() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1925,7 +1969,10 @@ export class TouchPanelApp {
       reader.onload = (re) => {
         try {
           const parsed = JSON.parse(re.target.result);
-          this.handleBlockLoaded(parsed, { title: file.name });
+          // A Gui_Frames frame (an exported panel, or any library frame) opens
+          // as a panel; anything else is this editor's own block.
+          const fromFrame = isFrame(parsed) ? frameToPanel(parsed) : null;
+          this.handleBlockLoaded(fromFrame || parsed, { title: file.name });
         } catch (err) {
           const S = window.APKSoftapp;
           if (!S) { alert('Invalid JSON touch panel block'); return; }
