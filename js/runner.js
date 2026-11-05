@@ -17,7 +17,9 @@
 import { CONTROL_DEFINITIONS, widgetStyleVars } from './controls.js';
 import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables } from './devicePanel.js';
 import { ControlLibrary, modelKey } from './library.js';
-import { loadDiscoveredConfig } from './discoveredPanel.js';
+// The app's discovery tunables, through the shared client (ROAD-3502).
+const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
+  ? window.APKSoftapp.discoveredConfig(new URL('../config/discovered.json', import.meta.url).href) : Promise.resolve({}));
 import {
   controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
 } from './runPanel.js';

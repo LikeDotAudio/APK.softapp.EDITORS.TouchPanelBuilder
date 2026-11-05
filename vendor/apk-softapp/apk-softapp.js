@@ -13,6 +13,8 @@
      bus()          window.APKBus.connect(), once per page.
      discovered()   the things the bus knows about (scanners, agents, presence),
                     merged by identity (MAC / serial, never IP), alive or dead.
+     discoveredPanel()  the same, drawn: one APKTable, a live column, a
+                    status line and a button per row (config/discovered.json).
      interfaces()   the Interface Map's Interfaces table (Gui/Interfaces/Map/…).
      describe()     its inputs, outputs and controls, drawn as a ? help panel.
      showProblem()  an error as what happened / why / do this, with Retry.
@@ -78,7 +80,16 @@
    else the serial, else the agent's own name, else the sighting — never an IP.
    live follows the owner's rule: verified within trustMinutes (5) is good,
    older is kinda (never good), lost / failed / offline is dead. Re-judged every
-   15 s even when the bus is quiet, so trust decays on screen.
+   15 s even when the bus is quiet, so trust decays on screen. `collections`
+   (default ['Device']) names the segment things are filed under, for a
+   scanner that files more (PLUGIN.WIFI: every BSS heard is under Network/).
+
+     const panel = await APKSoftapp.discoveredPanel(hostEl, {
+       configUrl: './config/discovered.json',  // { kinds, collections } — or config: {…}, or kinds: [...]
+       status: statusEl, id: 'my-discovered', pickLabel: 'Bind', onPick(thing) {},
+     });
+   draws it all (the editors' old js/discoveredPanel.js / discoveredTable.js);
+   APKSoftapp.thingRow(t) is one row, discoveredConfig(url) the checked tunables.
 
    THE INTERFACES TABLE
 
@@ -333,6 +344,9 @@
         var presenceActive = o.presenceActive || function () { return null; };
         var now = o.now || function () { return Date.now(); };
         var trustMs = (o.trustMinutes == null ? TRUST_MINUTES : o.trustMinutes) * 60000;
+        // The collection segment(s) a thing is filed under: Protocols/<proto>/<collection>/[kind/]<id>/<field>.
+        // 'Device' everywhere; a scanner may file more (PLUGIN.WIFI puts every BSS heard under 'Network').
+        var collections = Array.isArray(o.collections) && o.collections.length ? o.collections.map(String) : ['Device'];
         var hosts = {};        // proto/kind/id -> { proto, kind, id, fields }
         var agents = {};       // node -> { node, target, rows: {section/key: row}, status }
         var presence = {};     // proto/id -> { proto, id, doc }
@@ -342,7 +356,8 @@
             var proto = seg[0];
             if (!proto) return false;
             seen[proto] = true;
-            var d = seg.indexOf('Device');
+            var d = -1;
+            for (var i = 1; i < seg.length && d < 0; i++) if (collections.indexOf(seg[i]) >= 0) d = i;
             if (d < 0) return false;
             var tail = seg.slice(d + 1), kind = '', id, field;
             if (tail.length === 2) { id = tail[0]; field = tail[1]; }
@@ -563,7 +578,7 @@
             if (!C || !link) return idle(noBus(C), noBusCode(C));
             var model = createDiscovery({
                 roots: rootsOf(C), presenceActive: C.discoveryPresenceActive,
-                trustMinutes: opts.trustMinutes, now: opts.now
+                trustMinutes: opts.trustMinutes, now: opts.now, collections: opts.collections
             });
             var offs = [], watched = {}, pending = null, timer = null;
             var schedule = opts.schedule || function (fn) { return setTimeout(fn, 250); };
@@ -597,6 +612,220 @@
             };
             return handle;
         });
+    }
+
+    /* ───────────────────────── the Discovered panel ───────────────────────── */
+
+    /* What a dozen editors each kept a copy of (js/discoveredPanel.js,
+       js/discoveredTable.js, ROAD-3502): the things discovered() finds, as one
+       APKTable with a live column, a status line, and a button per row. */
+
+    var LIVE_STATES = ['good', 'kinda', 'dead'];
+
+    /** The identity of a discovered thing: MAC, else serial, else its agent's own name. Never an IP. */
+    function thingIdentity(t) {
+        if (!t) return '';
+        var a = t.agent;
+        return String(t.mac || t.serial || (isObj(a) ? a.node : a) || '');
+    }
+
+    /** One discovered thing as a plain table row (text only: APKTable writes cells with textContent). */
+    function thingRow(t) {
+        t = t || {};
+        var live = t.live || {};
+        var identity = thingIdentity(t);
+        function list(v) { return Array.isArray(v) ? v.join(', ') : ''; }
+        return {
+            id: String(t.id || identity),
+            name: String(t.name || t.model || identity || ''),
+            make: [t.vendor, t.model].filter(Boolean).join(' '),
+            vendor: String(t.vendor || ''),
+            model: String(t.model || ''),
+            identity: identity,
+            ips: list(t.ips),
+            kinds: list(t.kinds),
+            seenBy: list(t.protocols),
+            state: LIVE_STATES.indexOf(live.state) >= 0 ? live.state : 'kinda',   // nothing unverified is trusted
+            why: String(live.why || 'never verified')
+        };
+    }
+
+    var DISCOVERED_COLUMNS = [
+        { key: 'name', label: 'Name' },
+        { key: 'make', label: 'Make / model' },
+        { key: 'identity', label: 'MAC / serial', mono: true },
+        { key: 'ips', label: 'Address', mono: true },
+        { key: 'seenBy', label: 'Seen by' },
+        { key: 'why', label: 'Why' }
+    ];
+
+    function wordList(v) { return Array.isArray(v) && v.every(function (w) { return typeof w === 'string'; }); }
+
+    /* An app's discovery tunables, checked: kinds (and collections) must be
+       lists of words. → { ...the file, kinds, collections?, url, why, problem }.
+       why is '' when the file was read and is right; problem (a Problem, or
+       null) says what to fix. A file that is not there means "show everything"
+       (problem null) unless `required`. Never throws. */
+    function checkConfig(cfg, url) {
+        var bad = function (detail) {
+            return { kinds: [], url: url, why: detail, problem: problem('config_invalid', { detail: detail, subject: url,
+                fix: ['Fix ' + url + ' (JSON with "kinds": ["word", …]); the Discovered panel lists everything until then.'] }) };
+        };
+        if (!isObj(cfg)) return bad(url + ' holds ' + JSON.stringify(cfg) + ', not an object.');
+        if (cfg.kinds !== undefined && !wordList(cfg.kinds)) return bad('Field "kinds" in ' + url + ' is not a list of words.');
+        if (cfg.collections !== undefined && !wordList(cfg.collections)) return bad('Field "collections" in ' + url + ' is not a list of words.');
+        var out = {};
+        for (var k in cfg) if (Object.prototype.hasOwnProperty.call(cfg, k)) out[k] = cfg[k];
+        out.kinds = (cfg.kinds || []).slice();
+        out.url = url;
+        out.why = '';
+        out.problem = null;
+        return out;
+    }
+
+    function discoveredConfig(url, opts) {
+        opts = opts || {};
+        url = String(url || './config/discovered.json');
+        var missing = function (detail, code) {
+            return { kinds: [], url: url, why: detail, problem: opts.required ? problem(code, { detail: detail, subject: url }) : null };
+        };
+        return fetchJson(url, { cache: 'no-store', timeoutMs: opts.timeoutMs || 8000, subject: url }).then(function (r) {
+            if (r.ok) return checkConfig(r.data, url);
+            if (r.problem && r.problem.code === 'bad_json') {
+                return { kinds: [], url: url, why: r.problem.detail || (url + ' is not JSON'),
+                    problem: problem('config_invalid', { detail: r.problem.detail, subject: url,
+                        fix: ['Fix ' + url + ' (JSON with "kinds": ["word", …]); the Discovered panel lists everything until then.'] }) };
+            }
+            return missing((r.status ? r.status + ' reading ' : 'could not read ') + url, (r.problem && r.problem.code) || 'http_not_found');
+        });
+    }
+
+    /* DRAW WHAT THE BUS KNOWS. One call, the whole panel:
+
+         const panel = await APKSoftapp.discoveredPanel(hostEl, {
+           configUrl: './config/discovered.json',   // or config: {kinds,…}, or kinds: [...]
+           status: statusEl, id: 'my-discovered',   // the status line; the APKTable id
+           pickLabel: 'Bind', onPick(thing) {},     // a button per row (optional)
+           onChange(things) {}, columns, toRows,    // optional
+         });
+         panel.things() / panel.config / panel.table / panel.retry() / panel.stop()
+
+       The config's `kinds` filters (discovered({ kinds })); its `collections`
+       names the topic segments a thing is filed under (default Device). The
+       status line counts verified / not re-verified / dead and says when the
+       bus is not connected; no SDK, bus or broker is a Problem card in the
+       status line, with Retry. Resolves the panel; never throws. */
+    function discoveredPanel(host, opts) {
+        opts = opts || {};
+        var T = opts.table || root.APKTable;
+        var doc = (host && host.ownerDocument) || root.document;
+        var status = opts.status || null;
+        var subject = opts.subject || 'Discovered';
+        function say(text, state) {
+            if (!status) return;
+            status.textContent = text;
+            status.setAttribute('data-apk-state', state);
+            status.setAttribute('data-apk-tone', state);
+        }
+        var things = [], link = null;
+        var panel = {
+            ok: false, reason: '', problem: null, config: null, table: null, handle: null, bus: null,
+            things: function () { return things; },
+            stop: function () { if (panel.handle) panel.handle.stop(); },
+            retry: function () { return run(); }
+        };
+        if (!T || typeof T.create !== 'function' || !doc) {
+            panel.reason = 'vendor/apk-table did not load, so the Discovered panel cannot draw.';
+            panel.problem = problem('sdk_missing', { detail: panel.reason });
+            say(panel.reason, 'dead');
+            return Promise.resolve(panel);
+        }
+        var columns = [{ key: 'state', label: 'Live', render: function (v, row) {
+            var b = doc.createElement('span');
+            b.className = 'apk-live';
+            b.setAttribute('data-apk-state', row.state);
+            b.setAttribute('data-apk-tone', row.state);
+            b.textContent = row.state;
+            b.title = row.why;
+            return b;
+        } }].concat((opts.columns || DISCOVERED_COLUMNS).map(function (c) {
+            var o = { editable: false };
+            for (var k in c) if (Object.prototype.hasOwnProperty.call(c, k)) o[k] = c[k];
+            return o;
+        }));
+        if (opts.onPick) {
+            columns.push({ key: '_pick', label: '', render: function (v, row) {
+                var b = doc.createElement('button');
+                b.type = 'button';
+                b.className = 'btn btn-secondary btn-sm apk-table-btn';
+                b.textContent = opts.pickLabel || 'Use';
+                b.addEventListener('click', function () {
+                    var t = things.filter(function (x) { return String(x.id) === row.id; })[0];
+                    if (t) opts.onPick(t);
+                });
+                return b;
+            } });
+        }
+        var cfgOf = function () {
+            if (opts.config) return Promise.resolve(checkConfig(opts.config, String(opts.configUrl || opts.config.url || 'config')));
+            if (opts.configUrl) return discoveredConfig(opts.configUrl, { required: opts.required });
+            return Promise.resolve(checkConfig({ kinds: opts.kinds || [] }, 'kinds'));
+        };
+        var toRows = opts.toRows || function (list) { return list.map(thingRow); };
+        function words(cfg) { return cfg && cfg.kinds.length ? cfg.kinds.join(', ') : 'anything'; }
+        panel.table = T.create(host, {
+            id: opts.id, columns: columns, rows: [], editable: false,
+            empty: opts.empty || 'Nothing on the bus matches yet.',
+            searchPlaceholder: 'name, MAC, address'
+        });
+        function tell() {
+            var note = panel.config && panel.config.why ? ' · config: ' + panel.config.why : '';
+            if (link && link.connected === false) {
+                return say('Bus not connected' + (link.url ? ' (' + link.url + ')' : '') + ': nothing here is verified now' + note + '.', 'dead');
+            }
+            var n = function (s) { return things.filter(function (t) { return t.live && t.live.state === s; }).length; };
+            say(things.length + ' on the bus (kinds: ' + words(panel.config) + ') · ' + n('good') + ' verified · '
+                + n('kinda') + ' not re-verified · ' + n('dead') + ' dead. Trust decays after '
+                + (opts.trustMinutes == null ? TRUST_MINUTES : opts.trustMinutes) + ' min' + note + '.', things.length ? 'good' : 'kinda');
+        }
+        function draw(list) {
+            things = list;
+            panel.table.setRows(toRows(list));
+            tell();
+            if (opts.onChange) opts.onChange(list);
+        }
+        function run() {
+            if (panel.handle) { panel.handle.stop(); panel.handle = null; }
+            say('Asking the bus…', 'kinda');
+            return cfgOf().then(function (cfg) {
+                panel.config = cfg;
+                if (cfg.problem && opts.problems !== false) showProblem(cfg.problem, { subject: cfg.url });
+                return discovered({
+                    kinds: cfg.kinds, collections: cfg.collections, onChange: draw, bus: opts.bus,
+                    schedule: opts.schedule, now: opts.now, trustMinutes: opts.trustMinutes
+                });
+            }).then(function (d) {
+                panel.handle = d;
+                panel.ok = d.ok;
+                panel.reason = d.reason;
+                panel.problem = d.problem || null;
+                panel.bus = link = d.bus || null;
+                if (!d.ok) {
+                    say(d.reason, 'dead');
+                    // what happened / why / do this, in the status line, with Retry asking the bus again
+                    if (d.problem && opts.problems !== false) showProblem(d.problem, { into: status || undefined, subject: subject, onRetry: run });
+                    return panel;
+                }
+                if (link && typeof link.on === 'function' && !run.listening) {
+                    run.listening = true;
+                    link.on('connect', tell);
+                    link.on('close', tell);
+                }
+                draw(d.things());
+                return panel;
+            });
+        }
+        return run();
     }
 
     /* ───────────────────────── the Interfaces table ───────────────────────── */
@@ -1011,6 +1240,11 @@
         bus: bus,
         discovered: discovered,
         createDiscovery: createDiscovery,
+        discoveredPanel: discoveredPanel,
+        discoveredConfig: discoveredConfig,
+        thingRow: thingRow,
+        thingIdentity: thingIdentity,
+        DISCOVERED_COLUMNS: DISCOVERED_COLUMNS,
         interfaces: interfaces,
         interfacesTable: tableRows,
         inheritTheme: inheritTheme,

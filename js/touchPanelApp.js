@@ -2,7 +2,11 @@
 // MIT Licence. Free, for everyone, for ever. Full text in LICENSE at the root.
 
 import { connectTouchPanelHost, panelBlock, panelMeta, bindPanelDevice } from './touchPanelHost.js';
-import { showDiscovered, loadDiscoveredConfig } from './discoveredPanel.js';
+/* The Discovered panel and the app's discovery tunables are the shared client's
+   (APKSoftapp.discoveredPanel / discoveredConfig, ROAD-3502). */
+const DISCOVERED_CONFIG = new URL('../config/discovered.json', import.meta.url).href;
+const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
+  ? window.APKSoftapp.discoveredConfig(DISCOVERED_CONFIG) : Promise.resolve({}));
 import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, wantFor, arrivals } from './devicePanel.js';
 import {
   CONTROL_DEFINITIONS, STYLE_FIELDS, BEHAVIOR_FIELDS, STYLE_PRESETS, widgetStyleVars, rigHeight,
@@ -1213,12 +1217,11 @@ export class TouchPanelApp {
     panel.hidden = !panel.hidden;
     if (panel.hidden || panel.dataset.started) return;
     panel.dataset.started = '1';
-    const cfg = await loadDiscoveredConfig();
-    await showDiscovered(document.getElementById('discovered-table'), {
-      S: window.APKSoftapp, T: window.APKTable,
-      statusEl: document.getElementById('discovered-status'),
-      kinds: Array.isArray(cfg.kinds) ? cfg.kinds : [],
-      tableId: 'touchpanel-discovered',
+    if (!window.APKSoftapp?.discoveredPanel) return;
+    await window.APKSoftapp.discoveredPanel(document.getElementById('discovered-table'), {
+      id: 'touchpanel-discovered',
+      status: document.getElementById('discovered-status'),
+      configUrl: DISCOVERED_CONFIG,
       pickLabel: 'Bind',
       onPick: (thing) => { if (bindPanelDevice(this.panel, thing)) this.changed(); },
     });
