@@ -24,4 +24,6 @@ test('Touch Panel Control Definitions', () => {
   const faderHtml = CONTROL_DEFINITIONS.fader.render({ label: 'MAIN', value: '-3 dB' });
   assert.ok(faderHtml.includes('MAIN'));
   assert.ok(faderHtml.includes('-3 dB'));
+  assert.ok(CONTROL_DEFINITIONS.tile);
+  assert.match(CONTROL_DEFINITIONS.knob.render({ label: 'MONITOR' }), /MONITOR/);
 });
