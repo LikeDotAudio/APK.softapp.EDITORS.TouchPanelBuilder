@@ -45,6 +45,13 @@ A control's effective style is `theme.base ⊕ theme.style ⊕ widget.style` (`e
 
 `dropGrabBag({ key, verb, sub })` loads the model's variables, picks them (`grabBag`, or `paletteFilter` for a whole device), lays them out with `devicePanel.panelFromVariables` and appends the result as new pages named after the device and the bag — nothing already on the glass moves.
 
+## Device tabs, the link and the RIG / NAB sections
+
+- **Device tabs.** `updateDeviceTabs` runs after every bench read (`loadLibrary` and its 30 s timer). It adds a tab for each box `arrivals(bench, tabs)` finds online with a model. It opens the first one itself (`openDevice`) only when no device panel is open and no link was given. `openDevice` saves the current panel, its page and its link into the tab being left, then restores the saved copy for the tab it opens, or builds the panel from the box's link (`openFromLink(wantFor(d))`).
+- **The link.** `openFromLink` remembers the box as `this.link`. `setPage` → `syncLink` writes `linkSearch({...link, page})` with `history.replaceState`, keeping any other query parameters, and sets `document.title`. 🔗 **Link** (`copyLink`) copies `location.href`. A `page=` in the link opens that page by name.
+- **RIG / NAB.** `variablesFromApi` reads `nab` (dropping a get's twin) and every variable's `args` (`argsOf`: names from `args`, each described by `arg.parameters` for a `multi` arg). `panelFromVariables` and `panelFromPresented` take rig and nab out of their groups and frames and `pack` them onto their own **RIG** and **NAB** pages. A `rig` / `nab` control is `rigHeight(n)` tall, with a row per `behavior.args`. Dropping a rig or nab variable on the glass (`createWidgetFor`) sizes it the same way.
+- **Packing.** `pack(items, name, W, H, pages)`: shelf rows with a 2× gap at a block change, wrap, run on to "<name> 2", then scale a sparse page up to `MAX_GROW`.
+
 ## Tests
 
 `npm test` — node's own runner over `tests/*.test.mjs` (73 at the time of writing): library and liveness, palettes against the real 34401A / 33220A api.json, looks and hardware variety, push-and-hold, frame export / import and round trips through devicePanel, host@1 round trips, the discovered panel, the runner's wire format, saved panels.
