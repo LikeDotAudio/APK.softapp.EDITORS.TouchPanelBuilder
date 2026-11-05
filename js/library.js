@@ -26,6 +26,7 @@ export const VERB_LABEL = {
 
 const CATALOGUE_URLS = ['/api/instrument/api', '/api/os/instrument/api'];
 const DEVICES_URLS = ['/api/devices', '/api/os/devices'];
+const BIM_URLS = ['/api/bim/instances?state=online,graveyard,remembered'];
 
 async function firstJson(urls, fetchFn) {
   let lastError = null;
@@ -76,20 +77,106 @@ export function modelKey(family, model) {
   return `${family || ''}/${model || ''}`;
 }
 
-// Discovered boxes that the library knows, so a binding can name the box.
-export function benchDevices(devicesReply) {
-  return (devicesReply?.devices || [])
-    .filter(d => d && d.api && d.api.known)
-    .map(d => ({
-      key: d.prefix || `${d.api.family}/${d.api.model}/${d.key || d.name}`,
-      prefix: d.prefix || '',
-      name: d.key || d.name || d.api.model,
-      model: d.api.model,
-      family: d.api.family,
-      status: d.status || 'unknown',
-      address: d.address || d.resource || '',
-      variables: variableCount(d.api.summary),
+// LIVENESS — where a bench device sits in the left column. Online first, then
+// recently online, then UNKNOWN (orange: nobody has said either way), then
+// offline. Offline devices stay listed, greyed, so a panel's bindings to them
+// survive a box being switched off. Identity is the device's own key (serial,
+// MAC, USB id, bus prefix), never its IP.
+export const LIVENESS_ORDER = { online: 0, recent: 1, unknown: 2, offline: 3 };
+
+// The window "recently online" covers when the source does not state its own
+// (DATABASE.server.BIM sends `recent_secs`; /api/devices does not).
+export const DEFAULT_RECENT_SECS = 15 * 60;
+// A source's "online" is believed only this long after the box was last heard
+// (DATABASE.server.BIM sends `trust_secs`): an old "online" is unknown, not live.
+export const DEFAULT_TRUST_SECS = 5 * 60;
+
+function secondsOf(t) {
+  if (t === undefined || t === null || t === '') return null;
+  if (typeof t === 'number') return t > 1e12 ? Math.floor(t / 1000) : t;
+  const ms = Date.parse(String(t).replace(' ', 'T'));
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+export function livenessOf(state, lastSeen, nowSecs, recentSecs = DEFAULT_RECENT_SECS, trustSecs = DEFAULT_TRUST_SECS) {
+  const st = String(state || '').toLowerCase();
+  const seen = secondsOf(lastSeen);
+  if (st === 'online' || st === 'up' || st === 'alive') {
+    return seen === null || nowSecs - seen <= trustSecs ? 'online' : 'unknown';
+  }
+  if (seen !== null && nowSecs - seen <= recentSecs) return 'recent';
+  if (!st || st === 'unknown' || st === 'remembered' || seen === null) return 'unknown';
+  return 'offline';
+}
+
+export function sortBench(rows) {
+  return rows.sort((a, b) => (LIVENESS_ORDER[a.liveness] - LIVENESS_ORDER[b.liveness])
+    || ((b.lastSeen || 0) - (a.lastSeen || 0))
+    || String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
+}
+
+// /api/devices (WEB.OsApi): every discovered box, with the api block it answers.
+export function benchDevices(devicesReply, nowSecs = Math.floor(Date.now() / 1000), recentSecs = DEFAULT_RECENT_SECS) {
+  return sortBench((devicesReply?.devices || [])
+    .filter(d => d && (d.prefix || d.key || d.name))
+    .map(d => {
+      const api = d.api && d.api.known ? d.api : null;
+      return {
+        key: d.prefix || d.key || d.name,
+        prefix: d.prefix || '',
+        name: d.key || d.name || api?.model || '',
+        make: d.manufacturer || api?.manufacturer || '',
+        model: api?.model || d.model || '',
+        family: api?.family || d.category || '',
+        icon: '',
+        known: !!api,
+        status: d.status || 'unknown',
+        liveness: livenessOf(d.status, d.last_seen, nowSecs, recentSecs),
+        lastSeen: secondsOf(d.last_seen),
+        address: d.address || d.resource || '',
+        panel: d.panel && typeof d.panel === 'object' ? d.panel : null,
+        variables: api ? variableCount(api.summary) : 0,
+      };
     }));
+}
+
+// /api/bim/instances (DATABASE.server.BIM): the bench keyed by serial / USB id /
+// MAC, each with make, model, icon, its part and its default panel.
+export function benchFromBim(reply, catalogueModels = new Map(), nowSecs = Math.floor(Date.now() / 1000)) {
+  const recent = Number(reply?.recent_secs) || DEFAULT_RECENT_SECS;
+  const trust = Number(reply?.trust_secs) || DEFAULT_TRUST_SECS;
+  const byModel = new Map();
+  for (const m of catalogueModels.values()) byModel.set(String(m.model).toUpperCase(), m);
+  return sortBench((reply?.items || []).filter(r => r && r.key).map(r => {
+    const lib = byModel.get(String(r.model || '').toUpperCase());
+    const state = r.state === 'graveyard' ? 'offline' : r.state;
+    return {
+      key: r.key,
+      prefix: r.panel?.prefix || r.prefix || '',
+      name: r.name || [r.make, r.model].filter(Boolean).join(' ') || r.key,
+      make: r.make || '',
+      model: lib?.model || r.model || '',
+      family: lib?.family || '',
+      icon: r.icon || '',
+      part: r.part || '',
+      known: !!lib,
+      status: r.state || 'unknown',
+      liveness: livenessOf(state, r.last_seen, nowSecs, recent, trust),
+      lastSeen: secondsOf(r.last_seen),
+      address: '',
+      panel: r.panel || null,
+      variables: lib ? lib.variables : 0,
+    };
+  }));
+}
+
+export function agoText(lastSeen, nowSecs = Math.floor(Date.now() / 1000)) {
+  if (!lastSeen) return 'never seen';
+  const d = Math.max(0, nowSecs - lastSeen);
+  if (d < 90) return 'seen just now';
+  if (d < 3600) return `seen ${Math.round(d / 60)} min ago`;
+  if (d < 86400 * 2) return `seen ${Math.round(d / 3600)} h ago`;
+  return `seen ${Math.round(d / 86400)} days ago`;
 }
 
 // One flat row per controllable variable of one model's api.json.
@@ -198,12 +285,28 @@ export class ControlLibrary {
       this.error = err;
       this.families = [];
     }
+    await this.refreshBench();
+    return this;
+  }
+
+  // The bench, from the BIM instance registry when it answers, else OsApi's
+  // device list. Called again on a timer: liveness changes while you work.
+  async refreshBench() {
+    try {
+      const bim = await firstJson(BIM_URLS, this.fetchFn);
+      if (bim && Array.isArray(bim.items) && bim.source_ok !== false) {
+        this.bench = benchFromBim(bim, this.models);
+        this.benchSource = 'bim';
+        return this.bench;
+      }
+    } catch (_) {}
     try {
       this.bench = benchDevices(await firstJson(DEVICES_URLS, this.fetchFn));
+      this.benchSource = 'devices';
     } catch (_) {
-      this.bench = [];
+      this.bench = this.bench || [];
     }
-    return this;
+    return this.bench;
   }
 
   get totalModels() {

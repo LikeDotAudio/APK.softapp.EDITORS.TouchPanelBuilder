@@ -40,7 +40,6 @@ export const BEHAVIOR_FIELDS = [
   { key: 'feedback', label: 'Feedback Address', kind: 'text' },
   { key: 'icon', label: 'Icon', kind: 'text' },
   { key: 'subtitle', label: 'Subtitle', kind: 'text' },
-  { key: 'page', label: 'Page / Tab', kind: 'text' },
 ];
 
 // One-click looks. Values only — a preset never touches behaviour.

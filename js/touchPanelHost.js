@@ -19,6 +19,7 @@ export function panelBlock(panel) {
     height: panel.height,
     theme: panel.theme,
     savedLooks: panel.savedLooks || [],
+    pages: panel.pages || [],
     deviceId: panel.deviceId || '',
     widgets: panel.widgets,
   };

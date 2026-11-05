@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   ControlLibrary, groupCatalogue, variablesFromApi, suggestWidgetType,
-  humanLabel, bindingFor, benchDevices, variableCount, matchesQuery,
+  humanLabel, bindingFor, benchDevices, benchFromBim, livenessOf, variableCount, matchesQuery,
 } from '../js/library.js';
 
 const CATALOGUE = {
@@ -63,14 +63,35 @@ test('labels and bindings', () => {
   assert.equal(b.command, 'Set_Range');
 });
 
-test('bench keeps only boxes the library knows', () => {
+test('bench lists every box, online first, then recent, unknown (orange), offline last', () => {
+  const now = 2_000_000_000;
+  const iso = (secsAgo) => new Date((now - secsAgo) * 1000).toISOString();
   const bench = benchDevices({ devices: [
-    { prefix: 'p/DMM/34401A/Dev0', key: '34401A/Dev0', status: 'online',
+    { prefix: 'p/off', key: 'OFF/Dev0', status: 'offline', last_seen: iso(86400 * 30),
       api: { known: true, model: '34401A', family: 'DMM', summary: { set_count: 4 } } },
-    { prefix: 'p/x', api: { known: false } },
-  ] });
-  assert.equal(bench.length, 1);
+    { prefix: 'p/unk', key: 'UNK/Dev0' },
+    { prefix: 'p/recent', key: 'REC/Dev0', status: 'offline', last_seen: iso(120) },
+    { prefix: 'p/on', key: 'ON/Dev0', status: 'online',
+      api: { known: true, model: '34401A', family: 'DMM', summary: { set_count: 4 } } },
+  ] }, now);
+  assert.deepEqual(bench.map(d => d.liveness), ['online', 'recent', 'unknown', 'offline']);
   assert.equal(bench[0].variables, 4);
+  assert.equal(bench[2].known, false, 'a box the library has no api for is still listed');
+  assert.equal(livenessOf('remembered', null, now), 'unknown');
+  assert.equal(livenessOf('online', iso(86400 * 3), now), 'unknown', 'an online nobody has re-checked in days is unknown (orange)');
+});
+
+test('the BIM registry is read when it answers: graveyard is offline unless seen within its window', () => {
+  const now = 2_000_000_000;
+  const models = new Map([['DMM/34401A', { model: '34401A', family: 'DMM', variables: 155 }]]);
+  const bench = benchFromBim({ recent_secs: 600, items: [
+    { key: 'MY123', make: 'HP', model: '34401A', state: 'graveyard', last_seen: now - 300 },
+    { key: 'MY999', make: 'HP', model: '34401A', state: 'graveyard', last_seen: now - 6000 },
+    { key: 'USB-1', make: 'Rigol', model: 'DS1104Z', state: 'online', icon: '📈', panel: { prefix: 'p/scope' } },
+  ] }, models, now);
+  assert.deepEqual(bench.map(d => [d.key, d.liveness]), [['USB-1', 'online'], ['MY123', 'recent'], ['MY999', 'offline']]);
+  assert.equal(bench[1].variables, 155);
+  assert.equal(bench[0].prefix, 'p/scope');
 });
 
 test('ControlLibrary loads catalogue then a model, falling back to /api/os/', async () => {
