@@ -8,6 +8,7 @@ const DISCOVERED_CONFIG = new URL('../config/discovered.json', import.meta.url).
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(DISCOVERED_CONFIG) : Promise.resolve({}));
 import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, wantFor, arrivals } from './devicePanel.js';
+import { savedIdentity, savedTopic, readSaved, writeSaved, savedDoc, benchBus } from './savedPanel.js';
 import {
   CONTROL_DEFINITIONS, STYLE_FIELDS, BEHAVIOR_FIELDS, STYLE_PRESETS, widgetStyleVars, rigHeight,
 } from './controls.js';
@@ -1252,11 +1253,25 @@ export class TouchPanelApp {
           device: this.deviceFor.get(key) || null, width: this.panel.width, height: this.panel.height });
       } catch (_) { p = null; }
     }
+    // THE SAVED PANEL FIRST (ROAD-3503): what somebody edited and saved for
+    // this box opens before anything generated, unless a placement was picked.
+    this.bus = this.bus || await benchBus(window.APKSoftapp, cfg);
+    const identity = savedIdentity(p, want);
+    const topic = this.bus && window.APKContracts ? savedTopic(window.APKContracts.Topics.gui.topic, identity) : '';
+    const saved = topic ? await readSaved(this.bus, topic, Number(cfg.saved_wait_ms) || 1500) : null;
     this.opening = false;
-    if (!p) { say(`${want.model}: NO PANEL PRESENTED AND NO API.JSON — SAMPLE LAYOUT`); return; }
-    this.handleBlockLoaded({ id: `tp_${(p.deviceId || want.model).replace(/[^A-Za-z0-9]/g, '_')}`,
-      name: p.name, pages: p.pages, widgets: p.widgets });
-    this.panel.deviceId = p.deviceId;
+    if (!p && !saved) { say(`${want.model}: NO PANEL PRESENTED AND NO API.JSON — SAMPLE LAYOUT`); return; }
+    const useSaved = !!saved && !want.placement;
+    if (useSaved) {
+      this.handleBlockLoaded(saved);
+    } else {
+      this.handleBlockLoaded({ id: `tp_${(p.deviceId || want.model).replace(/[^A-Za-z0-9]/g, '_')}`,
+        name: p.name, pages: p.pages, widgets: p.widgets });
+    }
+    p = p || { name: saved.name, device: { model: want.model, type: want.family }, deviceId: identity, placement: 'saved', placements: [] };
+    this.panel.deviceId = (useSaved && saved.deviceId) || p.deviceId;
+    this.savedTopicName = topic;
+    this.fillPlacementPicker(p.placements, !!saved, useSaved ? '' : (want.placement || p.placement));
     this.link = {
       model: p.device.model || want.model, family: p.device.type || want.family,
       serial: want.serial || p.device.serial || '', resource: want.resource || p.device.resource || '',
@@ -1265,11 +1280,32 @@ export class TouchPanelApp {
     const pageAsked = want.page && this.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
     this.setPage(pageAsked ? pageAsked.id : this.panel.pages[0].id);
     this.changed();
-    say(`${p.name} · FROM ${String(p.placement).toUpperCase()}`
-      + (p.placements.length > 1 ? ` · ALSO ${p.placements.slice(1).join(', ').toUpperCase()}` : ''));
+    say(useSaved
+      ? `${this.panel.name} · SAVED ${String(saved.saved_at || '').slice(0, 16).replace('T', ' ')}`
+      : `${p.name} · FROM ${String(p.placement).toUpperCase()}`);
     await this.libraryReady;
     const key = modelKey(p.device.type || want.family, p.device.model || want.model);
     if (this.library.models.has(key)) this.selectModel(key);
+  }
+
+  /** The box's panels to pick from: its saved one (if any) and every placement it presents. */
+  fillPlacementPicker(placements = [], hasSaved = false, current = '') {
+    const sel = document.getElementById('placement-picker');
+    if (!sel) return;
+    const opts = [];
+    if (hasSaved) opts.push(['', '💾 Saved panel']);
+    for (const at of placements || []) opts.push([at, `⚙ ${at}`]);
+    sel.innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+    sel.value = current && opts.some(([v]) => v === current) ? current : (opts[0] ? opts[0][0] : '');
+    sel.hidden = opts.length < 2;
+    if (!sel.dataset.wired) {
+      sel.dataset.wired = '1';
+      sel.addEventListener('change', () => {
+        const want = { ...(this.link || linkQuery(location.search)), placement: sel.value };
+        history.replaceState(null, '', linkSearch(want, location.search) || location.pathname);
+        this.openFromLink(want);
+      });
+    }
   }
 
   /** The retained Gui/Panels/<key> document for the linked box, or null after waitMs.
@@ -1387,6 +1423,16 @@ export class TouchPanelApp {
   }
 
   saveBlock() {
+    // A panel opened for a box is also kept for that box, retained on the bus,
+    // so its link and its touch pad open it next time (ROAD-3503).
+    if (this.link && this.savedTopicName && writeSaved(this.bus, this.savedTopicName, savedDoc(this.panel, this.link))) {
+      const tag = document.getElementById('block-tag');
+      if (tag) tag.textContent = `SAVED FOR ${savedIdentity(this.panel, this.link)}`;
+      this.fillPlacementPicker([...(document.getElementById('placement-picker')?.options || [])]
+        .map(o => o.value).filter(Boolean), true, '');
+      // Kept on the bus; outside the CAD there is no need to download a copy as well.
+      if (!(this.host && this.host.embedded)) return 'bus';
+    }
     if (!this.host) return '';
     const how = this.host.save(panelBlock(this.panel), panelMeta(this.panel));
     const tag = document.getElementById('block-tag');

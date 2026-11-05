@@ -23,6 +23,7 @@ const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
 import {
   controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
 } from './runPanel.js';
+import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
@@ -284,7 +285,15 @@ async function start() {
   if (!want.model) { $('run-name').textContent = 'NO DEVICE NAMED (?model=…)'; return; }
   $('run-name').textContent = `${want.model} — LOADING…`;
   $('run-edit').href = `./index.html${linkSearch(want, '')}`;
-  const [panel, box, bus] = await Promise.all([loadPanel(want), findBox(want), connectBus()]);
+  const [generated, box, bus] = await Promise.all([loadPanel(want), findBox(want), connectBus()]);
+  // The panel saved for this box runs first (ROAD-3503), unless a placement was asked for.
+  const topic = bus && !want.placement
+    ? savedTopic(window.APKContracts.Topics.gui.topic, savedIdentity(generated, want)) : '';
+  const saved = topic ? await readSaved(bus, topic, 1500) : null;
+  const panel = saved
+    ? { ...saved, device: (generated && generated.device) || { model: want.model, type: want.family },
+        deviceId: saved.deviceId || (generated && generated.deviceId) || '', placement: 'saved panel' }
+    : generated;
   if (!panel) { $('run-name').textContent = `${want.model}: NO PANEL PRESENTED AND NO API.JSON`; return; }
   state.panel = panel;
   state.key = panel.deviceId || want.serial || want.model;
