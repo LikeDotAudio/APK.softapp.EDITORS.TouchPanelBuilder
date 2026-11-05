@@ -15,7 +15,10 @@ export const STYLE_FIELDS = [
   { key: 'accent', label: 'Accent / Value', kind: 'color' },
   { key: 'text', label: 'Text', kind: 'color' },
   { key: 'cap', label: 'Cap / Knob', kind: 'color' },
-  { key: 'capShape', label: 'Cap Shape', kind: 'select', options: ['circle', 'gear', 'octagon', 'chicken', 'skirt', 'flange'] },
+  { key: 'capShape', label: 'Cap Shape', kind: 'select', options: ['circle', 'gear', 'octagon', 'chicken', 'skirt', 'flange', 'knurled', 'bakelite', 'concentric'] },
+  { key: 'pointer', label: 'Pointer', kind: 'select', options: ['line', 'dot', 'triangle', 'notch', 'block', 'vintage'] },
+  { key: 'faderCap', label: 'Fader Cap', kind: 'select', options: ['standard', 'square', 'tall', 'tbar', 'slim', 'chrome'] },
+  { key: 'buttonShape', label: 'Button', kind: 'select', options: ['rect', 'round', 'square', 'lit', 'lamp', 'wink', 'toggle', 'piano', 'membrane'] },
   { key: 'radius', label: 'Corner Radius', kind: 'number', unit: 'px', min: 0, max: 60 },
   { key: 'borderWidth', label: 'Border Width', kind: 'number', unit: 'px', min: 0, max: 8 },
   { key: 'fontSize', label: 'Font Size', kind: 'number', unit: 'px', min: 6, max: 48 },
@@ -79,24 +82,111 @@ export function widgetStyleVars(w) {
 // Knob cap outline, from the library's visualization names to the shapes drawn here.
 const CAP_SHAPE_OF = {
   gear: 'gear', crafty: 'gear', octagon: 'octagon', chicken: 'chicken', pedal: 'chicken',
-  moog: 'skirt', api: 'skirt', british: 'skirt', marconi: 'skirt', 'wbs-elma': 'skirt',
+  moog: 'skirt', british: 'skirt', marconi: 'skirt', 'wbs-elma': 'knurled', elma: 'knurled', knurled: 'knurled',
+  api: 'concentric', concentric: 'concentric', bakelite: 'bakelite', vintage: 'bakelite',
   1176: 'flange', fender: 'flange', flange: 'flange', skirt: 'skirt', circle: 'circle', standard: 'circle',
 };
 const GEAR = 'polygon(50% 0%,59% 10%,71% 4%,75% 16%,88% 15%,86% 28%,98% 34%,90% 45%,98% 56%,87% 63%,89% 76%,76% 77%,72% 90%,60% 86%,50% 96%,40% 86%,28% 90%,24% 77%,11% 76%,13% 63%,2% 56%,10% 45%,2% 34%,14% 28%,12% 15%,25% 16%,29% 4%,41% 10%)';
 const OCTAGON = 'polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%)';
 
-function knobCap(shape) {
+function pointerMark(kind) {
+  const a = V('accent', '#38bdf8');
+  switch (kind) {
+    case 'dot': return `<div style="position:absolute; left:calc(50% - 3px); top:4px; width:6px; height:6px; border-radius:50%; background:${a};"></div>`;
+    case 'triangle': return `<div style="position:absolute; left:calc(50% - 5px); top:2px; width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:9px solid ${a};"></div>`;
+    case 'notch': return `<div style="position:absolute; left:calc(50% - 2px); top:0; width:4px; height:10px; background:#000; box-shadow:inset 0 0 0 1px ${a};"></div>`;
+    case 'block': return `<div style="position:absolute; left:calc(50% - 4px); top:2px; width:8px; height:13px; background:${a}; border-radius:1px;"></div>`;
+    case 'vintage': return `<div style="position:absolute; left:calc(50% - 1px); top:1px; width:2px; height:calc(50% + 4px); background:${a};"></div>`;
+    default: return `<div style="position:absolute; left:calc(50% - 1px); top:3px; width:2px; height:12px; background:${a};"></div>`;
+  }
+}
+
+function knobCap(shape, pointer = 'line') {
   const s = CAP_SHAPE_OF[String(shape || '').toLowerCase()] || 'circle';
-  const pointer = `<div style="width:2px; height:12px; background:${V('accent', '#38bdf8')}; transform:translateY(-8px);"></div>`;
+  const cap = V('cap', '#1e222b');
+  const p = pointerMark(pointer);
   if (s === 'chicken') {
-    return `<div style="width:22px; height:44px; border-radius:11px 11px 40% 40%; background:${V('cap', '#1e222b')}; border:1px solid #475569; display:flex; justify-content:center; padding-top:3px; box-sizing:border-box; transform:rotate(30deg);">
-      <div style="width:2px; height:12px; background:${V('accent', '#f2f2f2')};"></div></div>`;
+    return `<div style="position:relative; width:22px; height:44px; border-radius:11px 11px 40% 40%; background:${cap}; border:1px solid #111; box-shadow:0 3px 6px rgba(0,0,0,0.6); transform:rotate(30deg);">${p}</div>`;
+  }
+  if (s === 'knurled') {
+    // Elma style: knurled black grip, bright index line, small metal centre.
+    return `<div style="position:relative; width:40px; height:40px; border-radius:50%; background:repeating-conic-gradient(${cap} 0 7deg, #000 7deg 10deg); box-shadow:0 3px 6px rgba(0,0,0,0.7);">
+      <div style="position:absolute; inset:8px; border-radius:50%; background:${cap}; border:1px solid #000;"></div>
+      <div style="position:absolute; inset:16px; border-radius:50%; background:linear-gradient(135deg,#e5e7eb,#6b7280);"></div>${p}</div>`;
+  }
+  if (s === 'concentric') {
+    // API style: small cap over a coloured skirt with a white index.
+    return `<div style="position:relative; width:42px; height:42px; border-radius:50%; background:${V('accent', '#38bdf8')}; box-shadow:0 2px 6px rgba(0,0,0,0.6);">
+      <div style="position:absolute; inset:7px; border-radius:50%; background:${cap}; border:1px solid #000;">${p}</div></div>`;
+  }
+  if (s === 'bakelite') {
+    return `<div style="position:relative; width:42px; height:42px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #5b4636, ${cap} 60%, #0b0806); box-shadow:0 4px 8px rgba(0,0,0,0.7);">${p}</div>`;
   }
   const clip = s === 'gear' ? `clip-path:${GEAR};` : s === 'octagon' ? `clip-path:${OCTAGON};` : '';
   const radius = s === 'gear' || s === 'octagon' ? '0' : '50%';
   const skirt = s === 'skirt' ? 'box-shadow:0 0 0 5px #c9ced3, 0 2px 6px rgba(0,0,0,0.6);'
     : s === 'flange' ? 'box-shadow:0 0 0 4px #2b2b2b, 0 0 0 5px #777, 0 2px 6px rgba(0,0,0,0.6);' : '';
-  return `<div style="width:38px; height:38px; border-radius:${radius}; ${clip} ${skirt} background:${V('cap', '#1e222b')}; border:1px solid #475569; display:flex; align-items:center; justify-content:center;">${pointer}</div>`;
+  return `<div style="position:relative; width:38px; height:38px; border-radius:${radius}; ${clip} ${skirt} background:${cap}; border:1px solid #475569;">${p}</div>`;
+}
+
+// The fader's cap: the part of a console you recognise first.
+function faderThumb(kind, horiz) {
+  const cap = V('cap', '#475569');
+  const a = V('accent', '#94a3b8');
+  const pos = horiz ? 'left:60%; top:50%; transform:translate(-50%,-50%) rotate(90deg);' : 'bottom:30%; left:50%; transform:translateX(-50%);';
+  const at = (w, h, extra) => `<div style="position:absolute; ${pos} width:${w}px; height:${h}px; ${extra}"></div>`;
+  switch (kind) {
+    case 'square': return at(24, 24, `background:${cap}; border-radius:2px; border:1px solid #111; box-shadow:0 3px 5px rgba(0,0,0,0.6), inset 0 -10px 0 rgba(0,0,0,0.15); background-image:linear-gradient(${a},${a}); background-size:100% 2px; background-repeat:no-repeat; background-position:center;`);
+    case 'tall': return at(26, 36, `background:${cap}; border-radius:3px 3px 6px 6px; border:1px solid #000; box-shadow:0 4px 6px rgba(0,0,0,0.6); background-image:linear-gradient(${a},${a}), repeating-linear-gradient(transparent 0 4px, rgba(0,0,0,0.25) 4px 5px); background-size:100% 3px, 100% 100%; background-repeat:no-repeat, repeat; background-position:center;`);
+    case 'tbar': return at(40, 12, `background:linear-gradient(${cap},#111); border-radius:2px; border:1px solid #000; box-shadow:0 3px 4px rgba(0,0,0,0.6); border-top:2px solid ${a};`);
+    case 'slim': return at(14, 26, `background:${cap}; border-radius:2px; border:1px solid rgba(0,0,0,0.5); box-shadow:0 2px 3px rgba(0,0,0,0.5); background-image:linear-gradient(#111,#111); background-size:100% 2px; background-repeat:no-repeat; background-position:center;`);
+    case 'chrome': return at(30, 22, `background:linear-gradient(180deg,#f4f4f5,#9ca3af 45%,#e5e7eb 55%,#6b7280); border-radius:3px; border:1px solid #333; box-shadow:0 3px 5px rgba(0,0,0,0.6); border-top:2px solid ${a};`);
+    default: return at(30, 18, `background:${cap}; border-radius:3px; border:1px solid ${a}; box-shadow:0 2px 4px rgba(0,0,0,0.5);`);
+  }
+}
+
+// Buttons: every era pressed something different.
+function buttonFace(kind, label, icon) {
+  const t = `font-size:${V('fs', '11px')}; font-weight:${V('fw', '600')}; letter-spacing:0.5px;`;
+  const a = V('accent', '#3b82f6');
+  const full = 'width:100%; height:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;';
+  switch (kind) {
+    case 'round':
+      return `<div style="${full}"><div style="width:min(100%,46px); aspect-ratio:1; border-radius:50%; ${box('#242a38', '#111', '50%')} border-radius:50%; box-shadow:0 3px 0 #000, 0 4px 6px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center;"></div>
+        <span style="${t} color:${V('text', '#e2e8f0')};">${icon}${label}</span></div>`;
+    case 'square':
+      return `<div style="${full} ${box('#1f2329', '#000', '3px')} box-shadow:0 3px 0 #000; flex-direction:column; gap:3px;">
+        <i style="width:8px; height:8px; border-radius:50%; background:${a}; box-shadow:0 0 6px ${a};"></i>
+        <span style="${t} color:${V('text', '#e2e8f0')};">${icon}${label}</span></div>`;
+    case 'lit':
+      return `<div style="${full} border-radius:${V('radius', '3px')}; background:${a}; border:2px solid ${V('border', '#111')}; box-shadow:0 0 12px ${a}, inset 0 0 10px rgba(255,255,255,0.45);">
+        <span style="${t} color:#111;">${icon}${label}</span></div>`;
+    case 'lamp':
+      return `<div style="${full}"><div style="width:30px; height:30px; border-radius:50%; background:radial-gradient(circle at 40% 35%, #fff, ${a} 45%, #000 120%); border:4px solid #8a8f94; box-shadow:0 0 14px ${a};"></div>
+        <span style="${t} color:${V('text', '#e2e8f0')};">${icon}${label}</span></div>`;
+    case 'wink':
+      // The library's Wink: a lit window behind two shutters, half open.
+      return `<div style="${full} position:relative; overflow:hidden; border-radius:${V('radius', '10px')}; background:${a}; border:2px solid ${V('border', '#333')};">
+        <div style="position:absolute; left:0; right:0; top:0; height:32%; background:${V('bg', '#000')};"></div>
+        <div style="position:absolute; left:0; right:0; bottom:0; height:32%; background:${V('bg', '#000')};"></div>
+        <span style="position:relative; ${t} color:#000;">${icon}${label}</span>
+        <div style="position:absolute; inset:0; background:linear-gradient(rgba(255,255,255,0.35), transparent 50%);"></div></div>`;
+    case 'toggle':
+      return `<div style="${full} flex-direction:column; gap:2px; ${box('#2a2d31', '#111', '4px')}">
+        <div style="position:relative; width:18px; height:18px; border-radius:50%; background:radial-gradient(#d1d5db,#4b5563); border:1px solid #111;">
+          <div style="position:absolute; left:6px; top:-14px; width:6px; height:20px; border-radius:3px; background:linear-gradient(90deg,#9ca3af,#f3f4f6,#6b7280); transform:rotate(-15deg); transform-origin:bottom;"></div></div>
+        <span style="font-size:9px; font-weight:700; color:${V('text', '#e2e8f0')};">${icon}${label}</span></div>`;
+    case 'piano':
+      return `<div style="${full} align-items:flex-end; padding-bottom:6px; background:linear-gradient(${V('bg', '#e5e7eb')} 70%, rgba(0,0,0,0.35)); border:1px solid #111; border-radius:2px 2px 6px 6px; box-shadow:0 4px 0 #111;">
+        <span style="${t} color:${V('text', '#111')};">${icon}${label}</span></div>`;
+    case 'membrane':
+      return `<div style="${full} flex-direction:column; ${box('#3d342b', '#000', '1px')}">
+        <div style="width:70%; height:5px; background:${a};"></div>
+        <span style="font-size:9px; color:${V('text', '#efe8dc')};">${icon}${label}</span></div>`;
+    default:
+      return `<div style="${full} ${box('#242a38', '#3b82f6', '6px')}">
+        ${icon}<span style="${t} color:${V('text', '#e2e8f0')};">${label}</span></div>`;
+  }
 }
 
 const shownValue = (c, fallback) => {
@@ -120,9 +210,9 @@ export const CONTROL_DEFINITIONS = {
       const horiz = c.behavior?.orientation === 'horizontal';
       const track = horiz
         ? `<div style="height:6px; width:80%; background:#0f1115; border-radius:3px; position:relative;">
-            <div style="position:absolute; left:60%; top:-6px; width:18px; height:18px; background:${V('cap', '#475569')}; border-radius:3px; border:1px solid ${V('accent', '#94a3b8')};"></div></div>`
+            ${faderThumb(c.style?.faderCap, true)}</div>`
         : `<div style="width:6px; flex:1; max-height:120px; background:#0f1115; border-radius:3px; position:relative;">
-            <div style="position:absolute; bottom:30%; left:-12px; width:30px; height:18px; background:${V('cap', '#475569')}; border-radius:3px; border:1px solid ${V('accent', '#94a3b8')}; box-shadow:0 2px 4px rgba(0,0,0,0.5);"></div></div>`;
+            ${faderThumb(c.style?.faderCap, false)}</div>`;
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px; padding:8px 0; ${box('#181b22', '#333948', '6px')}">
           <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '400')}; color:${V('text', '#94a3b8')};">${c.label || 'LEVEL'}</span>
@@ -141,7 +231,7 @@ export const CONTROL_DEFINITIONS = {
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; ${box('transparent', 'transparent', '6px')}">
           <div style="width:50px; height:50px; border-radius:50%; background:conic-gradient(${V('accent', '#38bdf8')} 0deg 240deg, #1e293b 240deg 360deg); display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.6);">
-            ${knobCap(c.style?.capShape)}
+            ${knobCap(c.style?.capShape, c.style?.pointer)}
           </div>
           <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '400')}; color:${V('text', '#94a3b8')};">${c.label || 'GAIN'}</span>
         </div>`;
@@ -155,10 +245,7 @@ export const CONTROL_DEFINITIONS = {
     h: 50,
     render(c) {
       const icon = c.behavior?.icon ? `<span style="font-size:16px;">${c.behavior.icon}</span>` : '';
-      return `
-        <div style="width:100%; height:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; gap:6px; ${box('#242a38', '#3b82f6', '6px')} cursor:pointer;">
-          ${icon}<span style="font-size:${V('fs', '11px')}; font-weight:${V('fw', '600')}; color:${V('text', '#e2e8f0')}; letter-spacing:0.5px;">${c.label || 'MUTE'}</span>
-        </div>`;
+      return buttonFace(c.style?.buttonShape, c.label ?? 'MUTE', icon);
     }
   },
   meter: {
@@ -310,9 +397,11 @@ export const CONTROL_DEFINITIONS = {
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; ${box('transparent', 'transparent', '6px')}">
           ${ticks}
-          <div style="position:absolute; left:22%; top:22%; width:56%; height:56%; border-radius:50%; background:${V('cap', '#2a2d33')}; border:2px solid ${V('border', '#52525b')}; box-shadow:0 3px 8px rgba(0,0,0,0.6); transform:rotate(-30deg);">
+          ${c.style?.capShape
+            ? `<div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(-30deg);">${knobCap(c.style.capShape, c.style.pointer)}</div>`
+            : `<div style="position:absolute; left:22%; top:22%; width:56%; height:56%; border-radius:50%; background:${V('cap', '#2a2d33')}; border:2px solid ${V('border', '#52525b')}; box-shadow:0 3px 8px rgba(0,0,0,0.6); transform:rotate(-30deg);">
             <div style="position:absolute; left:calc(50% - 2px); top:4px; width:4px; height:40%; background:${V('accent', '#f59e0b')}; border-radius:2px;"></div>
-          </div>
+          </div>`}
           <span style="position:absolute; left:0; right:0; bottom:0; text-align:center; font-size:${V('fs', '10px')}; font-weight:${V('fw', '600')}; color:${V('text', '#94a3b8')};">${c.label || 'SOURCE'}</span>
         </div>`;
     }

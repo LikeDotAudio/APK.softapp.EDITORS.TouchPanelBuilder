@@ -395,16 +395,24 @@
     .look-target { font-size: 11px; color: var(--osc-text-muted); display: flex; gap: 8px; align-items: center; }
     .look-lib-body { flex: 1; display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
     .look-lib-body .lib-list { border-right: 1px solid var(--osc-border-default); }
+    .look-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .look-main > [hidden] { display: none !important; }
+    .look-viewbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--osc-border-default); }
+    .look-viewbar .verb-chip.on { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); background: var(--osc-bg-input); }
+    .look-live { flex: 1; min-height: 0; background: #0b0b0b; }
+    .look-live iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .look-grid { flex: 1; min-height: 0; }
+    .look-prev.strip { justify-content: center; gap: 8px; }
     .look-grid {
       overflow: auto; padding: 12px;
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 10px; align-content: start;
     }
     .look-card {
       border: 1px solid var(--osc-border-default); border-radius: 6px; padding: 6px; cursor: pointer;
       background: var(--osc-bg-input); display: flex; flex-direction: column; gap: 4px;
     }
     .look-card:hover { border-color: var(--osc-accent-primary); }
-    .look-prev { height: 96px; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 6px; overflow: hidden; }
+    .look-prev { height: 130px; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 6px; overflow: hidden; }
     .look-name { font-size: 11px; font-weight: 600; color: var(--osc-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .look-fam { font-size: 10px; color: var(--osc-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .look-sw { display: flex; gap: 3px; }
@@ -678,7 +686,16 @@
     </div>
     <div class="look-lib-body">
       <aside class="lib-list" id="look-groups"></aside>
-      <div class="look-grid" id="look-grid"></div>
+      <div class="look-main">
+        <div class="look-viewbar" id="look-viewbar">
+          <span class="verb-chip" data-look-view="live" title="The real widgets, drawn by the widget engine — click one to use it">▶ Live (real widgets)</span>
+          <span class="verb-chip" data-look-view="cards">▦ Cards</span>
+          <select class="input" id="look-file" style="max-width:420px;"></select>
+          <span class="muted-cell">Click any widget to apply it</span>
+        </div>
+        <div class="look-live" id="look-live" hidden></div>
+        <div class="look-grid" id="look-grid"></div>
+      </div>
     </div>
   </div>
 

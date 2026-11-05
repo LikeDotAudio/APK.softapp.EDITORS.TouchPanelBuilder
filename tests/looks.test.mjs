@@ -10,13 +10,22 @@ import { CONTROL_DEFINITIONS, widgetStyleVars } from '../js/controls.js';
 test('vintage looks cover every era shelf the theme picker promises', () => {
   const groups = [...groupLooks(VINTAGE_LOOKS).keys()];
   for (const g of ['Vintage Analog Consoles', 'Vintage Digital Consoles', 'Vintage Broadcast & Radio Consoles',
-    'Vintage Synths', 'Vintage Tape Recorders']) {
+    'Vintage Synths', 'Vintage Tape Recorders', 'Ward-Beck Systems', 'Vintage Outboard (UREI & friends)']) {
     assert.ok(groups.includes(g), g);
   }
   for (const l of VINTAGE_LOOKS) {
     assert.match(l.style.bg, /^#[0-9a-f]{6}$/i, l.name);
     assert.ok(Object.keys(widgetStyleVars({ style: l.style })).length >= 5, l.name);
   }
+});
+
+test('the looks are different hardware, not one control in different colours', () => {
+  const sig = (l) => [l.style.capShape, l.style.pointer, l.style.faderCap, l.style.buttonShape, JSON.stringify(l.preview)].join('|');
+  assert.ok(new Set(VINTAGE_LOOKS.map(sig)).size >= 20, 'at least twenty distinct hardware sets');
+  assert.ok(VINTAGE_LOOKS.some(l => /UREI 1176/.test(l.name)), 'UREI');
+  assert.ok(VINTAGE_LOOKS.filter(l => l.group === 'Ward-Beck Systems').every(l => l.style.capShape === 'knurled'), 'Ward-Beck Elma knobs');
+  const button = (shape) => CONTROL_DEFINITIONS.button.render({ label: 'X', style: { buttonShape: shape } });
+  assert.equal(new Set(['rect', 'round', 'square', 'lit', 'lamp', 'wink', 'toggle', 'piano', 'membrane'].map(button)).size, 9);
 });
 
 test('library elements map onto the panel\'s control types', () => {
