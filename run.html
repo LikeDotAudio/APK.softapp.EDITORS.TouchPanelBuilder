@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!-- Part of the APK.audio project — http://APK.audio — made by Anthony Kuzub
+     MIT Licence. Free, for everyone, for ever. Full text in LICENSE at the root. -->
+<!-- THE TOUCH PANEL, RUNNING. Same link as the builder (?model=&family=&resource=&serial=),
+     same panel (js/devicePanel.js), but every control drives the instrument through
+     KOMAND and every readout shows the instrument's readback. js/runner.js. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Touch Panel</title>
+  <link rel="stylesheet" href="./vendor/apk-contracts/apk-tokens.css">
+  <link rel="stylesheet" href="./css/theme.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: var(--osc-bg-base, #0b0d12); color: var(--osc-text-primary, #e2e8f0);
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; overflow: hidden; }
+    .run-head { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--osc-border-default, #2e3442);
+      background: var(--osc-bg-surface, #141821); }
+    .run-head b { font-size: 14px; letter-spacing: .04em; }
+    .pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 10px; border: 1px solid currentColor; white-space: nowrap; }
+    .pill[data-state=good] { color: var(--osc-status-success, #34d399); }
+    .pill[data-state=kinda] { color: var(--osc-status-warning, #fbbf24); }
+    .pill[data-state=dead] { color: var(--osc-status-danger, #f87171); }
+    .run-head .grow { flex: 1; }
+    .run-head a { color: var(--osc-accent-primary, #38bdf8); font-size: 12px; text-decoration: none; font-weight: 600; }
+    .run-tabs { display: flex; gap: 4px; padding: 8px 14px 0; flex-wrap: wrap; }
+    .run-tabs button { background: var(--osc-bg-surface, #141821); color: var(--osc-text-muted, #94a3b8); border: 1px solid var(--osc-border-default, #2e3442);
+      border-bottom: none; border-radius: 6px 6px 0 0; padding: 8px 16px; font-weight: 700; font-size: 12px; letter-spacing: .05em; cursor: pointer; }
+    .run-tabs button[aria-selected=true] { color: var(--osc-text-primary, #fff); border-color: var(--osc-accent-primary, #38bdf8); }
+    .run-stage { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: flex-start; padding: 10px; }
+    .run-bezel { background: #050608; border-radius: 18px; padding: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.6); transform-origin: top center; }
+    .run-glass { position: relative; background: #101216; border-radius: 6px; overflow: hidden; }
+    .tw { position: absolute; touch-action: none; user-select: none; cursor: pointer; }
+    .tw[data-touch=none] { cursor: default; }
+    .tw.on { outline: 3px solid var(--w-accent, #38bdf8); outline-offset: 1px; border-radius: 6px; }
+    .tw.sent { animation: sent .5s ease-out; }
+    @keyframes sent { from { filter: brightness(1.8); } to { filter: none; } }
+    .tw.unbound { opacity: .55; }
+    .pop { position: fixed; z-index: 10; background: var(--osc-bg-surface, #141821); border: 1px solid var(--osc-accent-primary, #38bdf8); border-radius: 10px;
+      padding: 14px; min-width: 260px; box-shadow: 0 12px 40px rgba(0,0,0,.7); }
+    .pop h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: .05em; }
+    .pop label { display: block; font-size: 11px; color: var(--osc-text-muted, #94a3b8); margin: 8px 0 4px; }
+    .pop input[type=number], .pop input[type=text] { width: 100%; box-sizing: border-box; font-size: 22px; padding: 8px; background: var(--osc-bg-input, #0b0d12);
+      color: inherit; border: 1px solid var(--osc-border-default, #2e3442); border-radius: 6px; font-family: monospace; }
+    .pop input[type=range] { width: 100%; }
+    .pop .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .pop button { flex: 1; min-width: 70px; padding: 12px; font-size: 13px; font-weight: 700; border-radius: 6px; cursor: pointer;
+      background: var(--osc-bg-surface-hover, #1c2230); color: inherit; border: 1px solid var(--osc-border-default, #2e3442); }
+    .pop button.go { background: var(--osc-accent-primary, #38bdf8); color: #031018; border-color: transparent; }
+    .pop .hint { font-size: 11px; color: var(--osc-text-subtle, #64748b); margin-top: 8px; font-family: monospace; word-break: break-all; }
+    .say { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #000c; padding: 8px 14px; border-radius: 6px; font-size: 12px; }
+    .say:empty { display: none; }
+  </style>
+</head>
+<body>
+  <header class="run-head">
+    <span class="pill" id="bus-pill" data-state="kinda">BUS…</span>
+    <b id="run-name">TOUCH PANEL</b>
+    <span class="pill" id="box-pill" data-state="kinda" hidden></span>
+    <span class="grow"></span>
+    <span id="run-from" style="font-size:11px; color:var(--osc-text-subtle,#64748b);"></span>
+    <a id="run-edit" href="./index.html" target="_blank" rel="noopener">✎ Edit this panel</a>
+  </header>
+  <nav class="run-tabs" id="run-tabs" role="tablist"></nav>
+  <main class="run-stage" id="run-stage">
+    <div class="run-bezel" id="run-bezel"><div class="run-glass" id="run-glass"></div></div>
+  </main>
+  <div class="say" id="say"></div>
+
+  <script src="./vendor/apk-contracts/apk-contracts.global.js"></script>
+  <script src="/FrontEnd/shared/apk-bus.js"></script>
+  <script src="./vendor/apk-softapp/apk-softapp.js"></script>
+  <script type="module" src="./js/runner.js"></script>
+</body>
+</html>

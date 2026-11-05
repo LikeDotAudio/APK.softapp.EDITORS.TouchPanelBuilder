@@ -198,6 +198,17 @@ const shownValue = (c, fallback) => {
 const box = (bg, border, radius) =>
   `background:${V('bg', bg)}; border:${V('bw', '1px')} solid ${V('border', border)}; border-radius:${V('radius', radius)}; box-shadow:${V('shadow', 'none')};`;
 
+/* A rig's / nab's arguments, from behavior.args (objects or bare names). */
+function rigArgs(c, fallback) {
+  const raw = Array.isArray(c.behavior?.args) && c.behavior.args.length ? c.behavior.args : fallback;
+  return raw.slice(0, 6).map(a => (typeof a === 'string' ? { name: a } : (a || { name: '?' })));
+}
+
+/** The height a rig / nab needs for n rows. */
+export function rigHeight(n) {
+  return 34 + 17 * Math.max(1, Math.min(6, n || 1));
+}
+
 export const CONTROL_DEFINITIONS = {
   fader: {
     type: 'fader',
@@ -378,6 +389,49 @@ export const CONTROL_DEFINITIONS = {
           <div style="position:absolute; left:50%; bottom:6%; width:2px; height:72%; background:${V('accent', '#111')}; transform-origin:bottom center; transform:rotate(18deg);"></div>
           <span style="position:absolute; left:0; right:0; top:52%; text-align:center; font-family:serif; font-weight:700; font-size:${V('fs', '14px')}; color:${V('text', '#222')};">VU</span>
           <span style="position:absolute; left:6px; bottom:4px; font-size:9px; color:${V('text', '#222')};">${c.label || ''}</span>
+        </div>`;
+    }
+  },
+  rig: {
+    type: 'rig',
+    name: 'Rig (multi-input command)',
+    icon: '🧰',
+    w: 230,
+    h: 104,
+    // One command, 2–4 arguments sent together (APPLy:SIN freq, amp, offset):
+    // a row per argument and one SEND key. The arguments are behavior.args.
+    render(c) {
+      const args = rigArgs(c, ['A', 'B']);
+      return `
+        <div style="width:100%; height:100%; box-sizing:border-box; ${box('#141821', '#3a3248', '6px')} padding:6px 8px; display:flex; flex-direction:column; gap:3px;">
+          <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '700')}; color:${V('text', '#e2e8f0')}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.label || 'RIG'}</span>
+          ${args.map(a => `<div style="display:flex; align-items:center; gap:6px; font-size:9px;">
+            <span style="flex:0 0 38%; color:#94a3b8; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${a.name}</span>
+            <span style="flex:1; background:#0a0d12; border:1px solid #2a3140; border-radius:3px; padding:1px 5px; font-family:monospace; color:${V('accent', '#a78bfa')}; white-space:nowrap; overflow:hidden;">${a.values ? a.values[0] : '—'}${a.unit ? ` ${a.unit}` : ''}</span>
+          </div>`).join('')}
+          <span style="margin-top:auto; align-self:flex-end; font-size:9px; font-weight:700; color:#0a0d12; background:${V('accent', '#a78bfa')}; border-radius:3px; padding:2px 8px;">SEND</span>
+        </div>`;
+    }
+  },
+  nab: {
+    type: 'nab',
+    name: 'Nab (multi-value read)',
+    icon: '🧲',
+    w: 230,
+    h: 104,
+    // One read that answers several things: a readout per field and a READ key.
+    render(c) {
+      const args = rigArgs(c, ['VALUE']);
+      return `
+        <div style="width:100%; height:100%; box-sizing:border-box; ${box('#0d1218', '#23384a', '6px')} padding:6px 8px; display:flex; flex-direction:column; gap:3px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '700')}; color:${V('text', '#e2e8f0')}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.label || 'NAB'}</span>
+            <span style="font-size:9px; font-weight:700; color:#0a0d12; background:${V('accent', '#38bdf8')}; border-radius:3px; padding:1px 7px;">READ</span>
+          </div>
+          ${args.map(a => `<div style="display:flex; justify-content:space-between; gap:6px; font-size:9px;">
+            <span style="color:#64748b; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${a.name}</span>
+            <span style="font-family:monospace; color:${V('accent', '#38bdf8')};">—${a.unit ? ` ${a.unit}` : ''}</span>
+          </div>`).join('')}
         </div>`;
     }
   },

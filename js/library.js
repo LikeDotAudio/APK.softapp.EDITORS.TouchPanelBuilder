@@ -13,16 +13,41 @@
 // The shell spells every OsApi route a second way under /api/os/, so both are
 // tried. Nothing in this file names a model.
 
-// Which verbs a panel control can drive. `nab` is the bulk-read twin of `get`
-// (same commands, same SCPI), so it is folded away rather than listed twice.
-export const VERBS = ['set', 'do', 'rig', 'get'];
+// Which verbs a panel control can drive. `rig` is a multi-argument setup (2–4
+// inputs sent as one command) and `nab` a read that returns more than one
+// thing; each gets its own control and its own section of a panel.
+export const VERBS = ['set', 'do', 'rig', 'get', 'nab'];
 
 export const VERB_LABEL = {
   set: 'Set',
   do: 'Do',
   rig: 'Rig',
   get: 'Get',
+  nab: 'Nab',
 };
+
+/** The arguments of a rig (or the fields of a nab), each with what the api.json
+    says about it: [{ name, kind, unit, values, min, max }]. */
+export function argsOf(ep) {
+  if (!ep || typeof ep !== 'object') return [];
+  const arg = ep.arg || {};
+  const params = arg.kind === 'multi' && arg.parameters && typeof arg.parameters === 'object' ? arg.parameters : {};
+  let names = Array.isArray(ep.args) ? ep.args : Object.keys(params);
+  if (!names.length && ep.returns && Array.isArray(ep.returns.fields)) names = ep.returns.fields;
+  // A single-kind arg on a multi-name command (APPLy:SIN freq, amp, offset
+  // with arg {unit: Hz}) describes the first name only.
+  return names.map((name, i) => {
+    const p = params[name] || (i === 0 && arg.kind !== 'multi' ? arg : {});
+    return {
+      name: String(name),
+      kind: p.kind || (arg.kind !== 'multi' ? arg.kind : '') || 'numeric',
+      unit: p.unit || '',
+      values: Array.isArray(p.values) ? p.values : null,
+      min: p.min ?? null,
+      max: p.max ?? null,
+    };
+  });
+}
 
 const CATALOGUE_URLS = ['/api/instrument/api', '/api/os/instrument/api'];
 const DEVICES_URLS = ['/api/devices', '/api/os/devices'];
@@ -43,8 +68,10 @@ async function firstJson(urls, fetchFn) {
 }
 
 // Count of controllable variables a catalogue line promises, from its summary.
+// Every get is also listed as a nab, so only the nabs beyond the gets are their own.
 export function variableCount(summary = {}) {
-  return VERBS.reduce((n, v) => n + (Number(summary[`${v}_count`]) || 0), 0);
+  const n = v => Number(summary[`${v}_count`]) || 0;
+  return n('set') + n('do') + n('rig') + n('get') + Math.max(0, n('nab') - n('get'));
 }
 
 // The catalogue as families -> models, sorted, with variable counts.
@@ -190,6 +217,8 @@ export function variablesFromApi(api) {
     if (!eps || typeof eps !== 'object') continue;
     for (const [name, ep] of Object.entries(eps)) {
       const command = ep?.command || name;
+      // A nab that is a get's twin (same command) is that get, not a second control.
+      if (verb === 'nab' && api.endpoints?.get && (api.endpoints.get[name] || api.endpoints.get[command])) continue;
       const arg = ep?.arg || {};
       out.push({
         id: variableId(family, model, verb, command),
@@ -205,6 +234,7 @@ export function variablesFromApi(api) {
         values: Array.isArray(arg.values) ? arg.values : null,
         unit: arg.unit || '',
         returns: ep?.returns?.type || '',
+        args: argsOf(ep),
         topic: ep?.mqtt?.topic || '',
         readingTopic: ep?.mqtt?.reading_topic || '',
       });
@@ -220,8 +250,10 @@ export function variableId(family, model, verb, command) {
 // The widget a variable asks for when it is dropped on bare glass.
 export function suggestWidgetType(v) {
   if (!v) return 'button';
+  if (v.verb === 'rig') return 'rig';
+  if (v.verb === 'nab') return 'nab';
   if (v.verb === 'get') return 'readout';
-  if (v.verb === 'do' || v.verb === 'rig') return 'button';
+  if (v.verb === 'do') return 'button';
   switch (v.kind) {
     case 'numeric':
     case 'integer':
@@ -240,7 +272,7 @@ export function suggestWidgetType(v) {
 // "Set_Volt_Range" -> "VOLT RANGE"
 export function humanLabel(command) {
   return String(command || '')
-    .replace(/^(Set|Get|Do|Setup|Rig)_/i, '')
+    .replace(/^(Set|Get|Do|Rig|Nab)_/i, '')
     .replace(/_/g, ' ')
     .trim()
     .toUpperCase() || String(command || '').toUpperCase();

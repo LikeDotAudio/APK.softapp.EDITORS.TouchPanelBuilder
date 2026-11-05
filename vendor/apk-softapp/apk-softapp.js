@@ -3,7 +3,7 @@
 /* apk-softapp.js — THE ONE CLIENT A SOFTAPP LOADS. window.APKSoftapp.
 
    One plain script (no build, no framework, no module) that gives a softapp the
-   four things every imported editor used to write for itself:
+   things every imported editor used to write for itself:
 
      connectHost()  the CAD block bridge — cad.like.audio/host@1, the block
                     messages (EDITORS.CAD.Like.audio contract/host@1/,
@@ -14,6 +14,9 @@
      discovered()   the things the bus knows about (scanners, agents, presence),
                     merged by identity (MAC / serial, never IP), alive or dead.
      interfaces()   the Interface Map's Interfaces table (Gui/Interfaces/Map/…).
+     describe()     its inputs, outputs and controls, drawn as a ? help panel.
+     showProblem()  an error as what happened / why / do this, with Retry.
+     fetchJson()    an input read that never throws and says what went wrong.
 
    Standalone-safe: no CAD around it, save() downloads a .json file and the
    page says so on screen; no APKContracts / APKBus / broker, discovered() and
@@ -90,6 +93,32 @@
      APKTable.create(hostEl, { id: 'my-ports', columns: [{ key: 'name', label: 'Name' }, …],
                                rows, onEdit(row, key, value) {}, onDelete(i) {} });
 
+   ─────────────────────────────────────────────────────────────────────────
+   WHEN SOMETHING GOES WRONG — what happened, why, do this
+
+     APKSoftapp.showProblem('broker_unreachable', { onRetry: connect })
+     APKSoftapp.showProblem(err, { into: slotEl, subject: 'Rack A', onRetry })
+     const r = await APKSoftapp.fetchJson('/api/bim', { timeoutMs: 8000 });
+     if (!r.ok) APKSoftapp.showProblem(r.problem, { onRetry: load });
+
+   A code is a key into contracts/problems/problems.json (APKContracts.problem):
+   title, cause, fix steps, retry. explain(err) maps what was thrown (fetch
+   failure, 404, AbortError, NotAllowedError, bad JSON…) to a code. Every
+   ok:false handle above carries .problem too. An error or rejected promise
+   nobody caught becomes a card on its own (guard(), on unless
+   window.APK_SOFTAPP_GUARD = false is set before this file loads).
+
+   INPUTS, OUTPUTS, CONTROL — what the app IS
+
+     APKSoftapp.describe({ name, does,
+       inputs:   [{ name, from, kind?, topic? }],
+       outputs:  [{ name, to,   kind?, topic? }],
+       controls: [{ name, how }],
+       problems: ['bad_input', 'save_failed'] });
+   draws a ? button (bottom-left, F1) with the three lists and the fixes for
+   the problems the app can hit. A bus input/output adds the broker ones.
+
+   ─────────────────────────────────────────────────────────────────────────
    APKSoftapp.esc(s) escapes text for HTML: every interpolated string goes
    through it (or textContent). APKSoftapp.inheritTheme() copies the parent
    shell's --apk-* tokens into a same-origin iframe. Tests: apk-softapp.test.js. */
@@ -260,6 +289,13 @@
         if (!C) return 'SDK missing: vendor/apk-contracts/apk-contracts.global.js did not load.';
         if (!root.APKBus) return 'No bus here: open this softapp from the APK.audio OS to see the network.';
         return 'No broker reachable from this page.';
+    }
+
+    /* The catalogue code for the same three cases. */
+    function noBusCode(C) {
+        if (!C) return 'sdk_missing';
+        if (!root.APKBus) return 'bus_missing';
+        return 'broker_unreachable';
     }
 
     /* ───────────────────────── discovery ───────────────────────── */
@@ -511,8 +547,11 @@
         });
     }
 
-    function idle(reason) {
-        return { ok: false, reason: reason, things: function () { return []; }, rows: function () { return []; }, stop: function () {} };
+    /* ok:false, with the reason in one line AND the Problem (what to do): show
+       it with APKSoftapp.showProblem(handle.problem, { into: slot, onRetry }). */
+    function idle(reason, code) {
+        return { ok: false, reason: reason, problem: problem(code || 'script_error', { detail: reason }),
+            things: function () { return []; }, rows: function () { return []; }, stop: function () {} };
     }
 
     /* Subscribes through bus(); resolves a handle at once (things() fills as retained messages land). */
@@ -521,7 +560,7 @@
         var C = contracts();
         var linkP = opts.bus ? Promise.resolve(opts.bus) : (C ? bus() : Promise.resolve(null));
         return linkP.then(function (link) {
-            if (!C || !link) return idle(noBus(C));
+            if (!C || !link) return idle(noBus(C), noBusCode(C));
             var model = createDiscovery({
                 roots: rootsOf(C), presenceActive: C.discoveryPresenceActive,
                 trustMinutes: opts.trustMinutes, now: opts.now
@@ -590,16 +629,19 @@
             return h;
         }
         if (opts.url) {
-            if (typeof root.fetch !== 'function') return Promise.resolve(idle('No fetch in this page.'));
+            if (typeof root.fetch !== 'function') return Promise.resolve(idle('No fetch in this page.', 'unsupported_browser'));
             return root.fetch(opts.url, { cache: 'no-store' })
-                .then(function (r) { if (!r.ok) throw new Error(r.status + ' from ' + opts.url); return r.json(); })
-                .then(function (doc) { return take(doc) ? handle({}) : idle(opts.url + ' holds no Interfaces table.'); })
-                .catch(function (e) { return idle('Could not read ' + opts.url + ' (' + e.message + ').'); });
+                .then(function (r) { if (!r.ok) throw Object.assign(new Error(r.status + ' from ' + opts.url), { status: r.status }); return r.json(); })
+                .then(function (doc) { return take(doc) ? handle({}) : idle(opts.url + ' holds no Interfaces table.', 'bad_input'); })
+                .catch(function (e) {
+                    var code = e.status ? (e.status === 404 ? 'http_not_found' : e.status >= 500 ? 'http_server_error' : 'http_forbidden') : explain(e).code;
+                    return idle('Could not read ' + opts.url + ' (' + e.message + ').', code);
+                });
         }
         var C = contracts();
         var linkP = opts.bus ? Promise.resolve(opts.bus) : (C ? bus() : Promise.resolve(null));
         return linkP.then(function (link) {
-            if (!C || !link) return idle(noBus(C));
+            if (!C || !link) return idle(noBus(C), noBusCode(C));
             var off = link.subscribe(C.Topics.gui.topic(INTERFACES_PATH), function (topic, text) { take(parseJson(text)); });
             return handle({ topic: C.Topics.gui.topic(INTERFACES_PATH), stop: function () { if (typeof off === 'function') off(); } });
         });
@@ -621,9 +663,349 @@
         return n;
     }
 
+    /* ───────────────────────── problems: what happened, why, do this ───────────────────────── */
+
+    /* The catalogue is contracts/problems/problems.json, through APKContracts.
+       These few are the ones that can happen BEFORE APKContracts loads (or
+       because it did not), so this file must be able to say them on its own.
+       apk-softapp.test.js holds every one equal to the catalogue's. */
+    var FALLBACK_PROBLEMS = {
+        sdk_missing: {
+            area: 'config', title: "This app's shared code did not load",
+            cause: 'vendor/apk-contracts/apk-contracts.global.js (or vendor/apk-softapp/apk-softapp.js) is missing or was served as an error page.',
+            fix: ['Reload the page once (Ctrl+Shift+R) in case it was a half-finished load.',
+                'Re-vendor it: python3 .apk.scripts/vendor_contract_web.py <app>/vendor/apk-contracts and python3 .apk.scripts/vendor_shared_web.py <app>/vendor/apk-softapp.',
+                'If the app is served by the bench, rebuild the image that carries it: PODS/POD.manager/MANAGER.Docktor/K8/up-stack.sh WEB.Frontend-Assets.'],
+            retry: true
+        },
+        script_error: {
+            area: 'config', title: 'Something in this app broke',
+            cause: 'The app hit an error it did not expect. What you see may be incomplete.',
+            fix: ['Save or export your work now if you can.', 'Reload the page.',
+                "If it happens again, copy the details (button below) into the app's roadmap item so it can be fixed."],
+            retry: true
+        }
+    };
+
+    function problem(code, opts) {
+        var C = root.APKContracts;
+        opts = opts || {};
+        if (C && typeof C.problem === 'function') return C.problem(String(code), opts);
+        var known = Object.prototype.hasOwnProperty.call(FALLBACK_PROBLEMS, code);
+        var e = known ? FALLBACK_PROBLEMS[code] : FALLBACK_PROBLEMS.script_error;
+        var p = { code: String(code), area: e.area, title: known ? e.title : (opts.detail || e.title), cause: e.cause,
+            fix: (opts.fix || []).concat(e.fix), retry: e.retry };
+        if (opts.detail != null && known) p.detail = opts.detail;
+        if (opts.subject != null) p.subject = opts.subject;
+        return p;
+    }
+
+    /* Whatever was thrown (Error, DOMException, Response, string, {code}) → a Problem. */
+    function explain(err, opts) {
+        var C = root.APKContracts;
+        opts = opts || {};
+        var extra = Array.isArray(opts.fix) ? opts.fix : [];
+        if (isObj(err) && typeof err.code === 'string' && typeof err.title === 'string' && Array.isArray(err.fix)) {   // already one
+            if (!extra.length && opts.subject == null) return err;
+            var copy = {};
+            for (var k in err) if (Object.prototype.hasOwnProperty.call(err, k)) copy[k] = err[k];
+            copy.fix = extra.concat(err.fix.filter(function (s) { return extra.indexOf(s) < 0; }));
+            if (opts.subject != null && copy.subject == null) copy.subject = opts.subject;
+            return copy;
+        }
+        if (C && typeof C.explain === 'function') return C.explain(err, opts);
+        var msg = err && err.message ? err.message : String(err);
+        return problem('script_error', { detail: msg, subject: opts.subject, fix: extra });
+    }
+
+    function problemText(p) {
+        var C = root.APKContracts;
+        if (C && typeof C.problemText === 'function') return C.problemText(p);
+        var lines = [p.title + (p.subject ? ' — ' + p.subject : '') + ' [' + p.code + ']'];
+        if (p.detail) lines.push('Details: ' + p.detail);
+        lines.push('Why: ' + p.cause);
+        p.fix.forEach(function (s, i) { lines.push((i + 1) + '. ' + s); });
+        return lines.join('\n');
+    }
+
+    var STACK_ID = 'apk-softapp-problems';
+    var shown = {};   // code|detail -> card, so one fault repeating is one card
+
+    function el(doc, tag, css, text) {
+        var n = doc.createElement(tag);
+        if (css) n.style.cssText = css;
+        if (text != null) n.textContent = text;
+        return n;
+    }
+
+    function problemStack(doc) {
+        var s = doc.getElementById && doc.getElementById(STACK_ID);
+        if (s) return s;
+        s = el(doc, 'div', 'position:fixed;right:8px;bottom:40px;z-index:10000;display:flex;flex-direction:column;gap:8px;'
+            + 'max-width:min(420px,calc(100vw - 16px));max-height:calc(100vh - 56px);overflow:auto');
+        s.id = STACK_ID;
+        (doc.body || doc.documentElement).appendChild(s);
+        return s;
+    }
+
+    /* Draw a problem: what happened, why, the steps, and Retry / Copy / Dismiss.
+         APKSoftapp.showProblem(p | code | error, { into: element, onRetry() {}, onClose() {} })
+       → the card element (or null with no document). `into` replaces that
+       element's content (an inline slot in the app); without it the card
+       stacks bottom-right. Text only — nothing interpolated as HTML. */
+    function showProblem(p, opts) {
+        opts = opts || {};
+        if (typeof p === 'string') p = problem(p, opts);
+        else p = explain(p, opts);
+        var doc = root.document;
+        if (!doc || !doc.createElement) return null;
+        var key = p.code + '|' + (p.detail || '') + '|' + (p.subject || '');
+        if (!opts.into && shown[key] && shown[key].parentNode) return shown[key];
+        var tone = p.area === 'browser' || p.retry ? 'kinda' : 'dead';
+        var card = el(doc, 'section', 'font:13px/1.4 system-ui,sans-serif;color:var(--text-main,#eee);'
+            + 'background:var(--bg-panel,#1e1e1e);border:1px solid var(--border-color,#444);'
+            + 'border-left:4px solid var(--apk-state-' + tone + ',' + (tone === 'dead' ? '#e5484d' : '#e5a50a') + ');'
+            + 'border-radius:6px;padding:10px 12px;box-shadow:0 4px 16px rgba(0,0,0,.4)');
+        card.setAttribute('role', 'alert');
+        card.setAttribute('data-apk-state', tone);
+        card.setAttribute('data-apk-problem', p.code);
+        card.appendChild(el(doc, 'strong', 'display:block;font-size:14px', p.title + (p.subject ? ' — ' + p.subject : '')));
+        if (p.detail) card.appendChild(el(doc, 'div', 'margin-top:2px;color:var(--text-muted,#aaa);word-break:break-word', p.detail));
+        card.appendChild(el(doc, 'div', 'margin-top:6px', 'Why: ' + p.cause));
+        if (p.fix && p.fix.length) {
+            card.appendChild(el(doc, 'div', 'margin-top:6px;font-weight:600', 'Do this:'));
+            var ol = el(doc, 'ol', 'margin:2px 0 0 18px;padding:0');
+            p.fix.forEach(function (step) { ol.appendChild(el(doc, 'li', 'margin:2px 0', step)); });
+            card.appendChild(ol);
+        }
+        var bar = el(doc, 'div', 'margin-top:8px;display:flex;gap:6px;flex-wrap:wrap');
+        var btn = 'font:inherit;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border-color,#555);'
+            + 'background:var(--bg-surface,#2a2a2a);color:inherit';
+        function button(label, fn, primary) {
+            var b = el(doc, 'button', btn + (primary ? ';background:var(--apk-accent,#f4902c);color:var(--apk-on-accent,#111);border-color:transparent' : ''), label);
+            b.setAttribute('type', 'button');
+            if (b.addEventListener) b.addEventListener('click', fn);
+            else b.onclick = fn;
+            bar.appendChild(b);
+            return b;
+        }
+        function close() {
+            delete shown[key];
+            if (opts.into) { if (opts.into.textContent !== undefined) opts.into.textContent = ''; }
+            else if (card.remove) card.remove();
+            else if (card.parentNode && card.parentNode.removeChild) card.parentNode.removeChild(card);
+            if (opts.onClose) opts.onClose(p);
+        }
+        if (opts.onRetry && p.retry !== false) button('Retry', function () { close(); opts.onRetry(p); }, true);
+        button('Copy details', function () {
+            var text = problemText(p);
+            try { root.navigator.clipboard.writeText(text); } catch (e) { /* no clipboard: the text is on screen */ }
+        });
+        if (opts.dismissable !== false) button('Dismiss', close);
+        card.appendChild(bar);
+        if (opts.into) {
+            if (opts.into.replaceChildren) opts.into.replaceChildren(card);
+            else { opts.into.textContent = ''; opts.into.appendChild(card); }
+        } else {
+            var stack = problemStack(doc);
+            stack.appendChild(card);
+            shown[key] = card;
+            var kids = stack.children || [];
+            while (kids.length > 3 && stack.removeChild) stack.removeChild(kids[0]);   // three is a lot already
+        }
+        if (root.console && root.console.warn) root.console.warn(problemText(p));
+        return card;
+    }
+
+    /* The page's last line of defence: an error or a rejected promise nobody
+       caught becomes a card with a way back, instead of a dead button and a
+       console nobody has open. On by default for every page that loads this
+       file; window.APK_SOFTAPP_GUARD = false before it loads turns it off. */
+    var NOISE = /ResizeObserver loop|^Script error\.?$|Non-Error promise rejection captured with value: undefined/;
+    var guarded = false;
+    function guard(opts) {
+        if (guarded || !root.addEventListener) return false;
+        guarded = true;
+        opts = opts || {};
+        root.addEventListener('error', function (e) {
+            if (!e || e.target && e.target !== root && e.target.tagName) {
+                // a <script>/<img>/<link> that failed to load: name the file
+                var src = e && e.target && (e.target.src || e.target.href);
+                if (src && /apk-(contracts|softapp)/.test(src)) showProblem('sdk_missing', { detail: src + ' did not load' });
+                return;
+            }
+            var msg = String((e.error && e.error.message) || e.message || '');
+            if (NOISE.test(msg)) return;
+            showProblem(e.error || msg, { subject: opts.subject || described && described.name });
+        }, true);
+        root.addEventListener('unhandledrejection', function (e) {
+            var r = e && e.reason;
+            if (NOISE.test(String(r && r.message || r))) return;
+            showProblem(r, { subject: opts.subject || described && described.name });
+        });
+        return true;
+    }
+
+    /* AN INPUT, READ WITH A WAY BACK. fetch + status + JSON in one call that
+       never throws:
+         const r = await APKSoftapp.fetchJson('/api/bim', { timeoutMs: 8000 });
+         if (!r.ok) return APKSoftapp.showProblem(r.problem, { into: slot, onRetry: load });
+         use(r.data);
+       The problem names the URL (detail) and what failed (status, timeout,
+       not JSON — an HTML error page is the usual one). */
+    function fetchJson(url, opts) {
+        opts = opts || {};
+        if (typeof root.fetch !== 'function') return Promise.resolve({ ok: false, problem: problem('unsupported_browser', { detail: 'no fetch() in this page', subject: opts.subject }) });
+        var ctl = typeof root.AbortController === 'function' ? new root.AbortController() : null;
+        var timer = ctl && opts.timeoutMs ? setTimeout(function () { ctl.abort(); }, opts.timeoutMs) : null;
+        var init = {};
+        for (var k in opts) if (k !== 'timeoutMs' && k !== 'subject' && Object.prototype.hasOwnProperty.call(opts, k)) init[k] = opts[k];
+        if (ctl) init.signal = ctl.signal;
+        var sub = { subject: opts.subject };
+        return root.fetch(url, init).then(function (r) {
+            if (!r.ok) return { ok: false, status: r.status, problem: explain({ ok: false, status: r.status, statusText: r.statusText, url: String(url) }, sub) };
+            return r.text().then(function (text) {
+                try { return { ok: true, status: r.status, data: JSON.parse(text) }; }
+                catch (e) {
+                    var looksHtml = /^\s*</.test(text);
+                    return { ok: false, status: r.status, problem: problem('bad_json', { detail: String(url) + (looksHtml ? ' answered with an HTML page, not JSON' : ': ' + e.message), subject: opts.subject }) };
+                }
+            });
+        }, function (e) {
+            var p = explain(e, sub);
+            if (!p.detail || p.detail === e.message) p.detail = String(url) + (e && e.message ? ' — ' + e.message : '');
+            return { ok: false, problem: p };
+        }).then(function (out) { if (timer) clearTimeout(timer); return out; });
+    }
+
+    /* ───────────────────────── inputs, outputs, control ───────────────────────── */
+
+    /* Every app says what it takes in, what it puts out, and what it lets you
+       control. Those three lists ARE the app; the help panel draws them, and
+       the problems it names say what to do when one of them fails.
+
+         APKSoftapp.describe({
+           name: 'Patch Panel',
+           does: 'Lays out a patch panel and its labels.',
+           inputs:   [{ name: 'Panel file', from: '.json from Open, or the CAD block', kind: 'file' }],
+           outputs:  [{ name: 'Panel block', to: 'the CAD drawing, or a .json download', kind: 'file' }],
+           controls: [{ name: 'Add port', how: 'Click + or press A' }],
+           problems: ['bad_input', 'save_failed'],   // codes from contracts/problems/problems.json
+           help: false                                // no ? button (the app draws describe() itself)
+         });
+
+       Each entry is { name, from|to|how, kind?, topic? } — `topic` for a bus
+       input/output. Returns the description, with `problems` expanded to full
+       Problems. APKSoftapp.described is the last one (null before). F1 or the
+       ? button (bottom-left) opens the panel; Esc closes it. */
+    var described = null;
+    var HELP_ID = 'apk-softapp-help';
+
+    function listOf(v) { return Array.isArray(v) ? v.filter(isObj) : []; }
+
+    function describe(d) {
+        d = isObj(d) ? d : {};
+        var codes = Array.isArray(d.problems) ? d.problems.slice() : [];
+        var usesBus = listOf(d.inputs).concat(listOf(d.outputs)).some(function (x) { return x.topic || x.kind === 'bus'; });
+        if (usesBus) ['broker_unreachable', 'bus_disconnected'].forEach(function (c) { if (codes.indexOf(c) < 0) codes.push(c); });
+        described = {
+            name: String(d.name || (root.document && root.document.title) || 'This app'),
+            does: d.does ? String(d.does) : '',
+            inputs: listOf(d.inputs),
+            outputs: listOf(d.outputs),
+            controls: listOf(d.controls),
+            problems: codes.map(function (c) { return problem(c); })
+        };
+        api.described = described;
+        if (d.help !== false) helpButton();
+        return described;
+    }
+
+    function helpButton() {
+        var doc = root.document;
+        if (!doc || !doc.createElement || (doc.getElementById && doc.getElementById(HELP_ID + '-btn'))) return;
+        var b = el(doc, 'button', 'position:fixed;left:8px;bottom:8px;z-index:9998;width:28px;height:28px;border-radius:50%;'
+            + 'font:bold 15px system-ui,sans-serif;cursor:pointer;border:1px solid var(--border-color,#555);'
+            + 'background:var(--bg-panel,#1e1e1e);color:var(--text-main,#eee);opacity:.75', '?');
+        b.id = HELP_ID + '-btn';
+        b.setAttribute('type', 'button');
+        b.setAttribute('title', 'What this app takes in, puts out and lets you control (F1)');
+        b.setAttribute('aria-label', 'Help: inputs, outputs, controls');
+        if (b.addEventListener) b.addEventListener('click', function () { toggleHelp(); });
+        (doc.body || doc.documentElement).appendChild(b);
+        if (root.addEventListener && !helpButton.keys) {
+            helpButton.keys = true;
+            root.addEventListener('keydown', function (e) {
+                if (e.key === 'F1') { e.preventDefault(); toggleHelp(); }
+                else if (e.key === 'Escape') toggleHelp(false);
+            });
+        }
+    }
+
+    /* Open (true), close (false) or flip (no argument) the help panel. */
+    function toggleHelp(open) {
+        var doc = root.document;
+        if (!doc || !doc.createElement) return false;
+        var cur = doc.getElementById && doc.getElementById(HELP_ID);
+        if (cur && open !== true) { if (cur.remove) cur.remove(); return false; }
+        if (cur || open === false || !described) return !!cur;
+        var d = described;
+        var p = el(doc, 'aside', 'position:fixed;left:8px;bottom:44px;z-index:9999;width:min(460px,calc(100vw - 16px));'
+            + 'max-height:calc(100vh - 60px);overflow:auto;font:13px/1.45 system-ui,sans-serif;color:var(--text-main,#eee);'
+            + 'background:var(--bg-panel,#1e1e1e);border:1px solid var(--border-color,#444);border-radius:8px;padding:12px 14px;'
+            + 'box-shadow:0 6px 24px rgba(0,0,0,.5)');
+        p.id = HELP_ID;
+        p.setAttribute('role', 'dialog');
+        p.setAttribute('aria-label', d.name + ' — inputs, outputs, controls');
+        p.appendChild(el(doc, 'strong', 'display:block;font-size:15px', d.name));
+        if (d.does) p.appendChild(el(doc, 'div', 'color:var(--text-muted,#aaa);margin-top:2px', d.does));
+        function section(title, rows, dir) {
+            p.appendChild(el(doc, 'div', 'margin-top:10px;font-weight:600;color:var(--apk-accent,#f4902c)', title));
+            if (!rows.length) { p.appendChild(el(doc, 'div', 'color:var(--text-muted,#aaa)', 'None.')); return; }
+            var ul = el(doc, 'ul', 'margin:2px 0 0 18px;padding:0');
+            rows.forEach(function (r) {
+                var where = r[dir] || r.topic || '';
+                var li = el(doc, 'li', 'margin:2px 0');
+                li.appendChild(el(doc, 'span', 'font-weight:600', String(r.name || r.topic || '?')));
+                if (where) li.appendChild(el(doc, 'span', '', (dir === 'how' ? ': ' : dir === 'from' ? ' ← ' : ' → ') + where));
+                if (r.topic && r[dir]) li.appendChild(el(doc, 'code', 'display:block;font-size:11px;color:var(--text-muted,#aaa)', r.topic));
+                ul.appendChild(li);
+            });
+            p.appendChild(ul);
+        }
+        section('Inputs — what it reads', d.inputs, 'from');
+        section('Outputs — what it writes', d.outputs, 'to');
+        section('Controls — what you can do', d.controls, 'how');
+        if (d.problems.length) {
+            p.appendChild(el(doc, 'div', 'margin-top:10px;font-weight:600;color:var(--apk-accent,#f4902c)', 'If something goes wrong'));
+            d.problems.forEach(function (pr) {
+                var det = el(doc, 'details', 'margin:3px 0');
+                det.appendChild(el(doc, 'summary', 'cursor:pointer', pr.title));
+                var ol = el(doc, 'ol', 'margin:2px 0 0 18px;padding:0');
+                pr.fix.forEach(function (s) { ol.appendChild(el(doc, 'li', '', s)); });
+                det.appendChild(el(doc, 'div', 'color:var(--text-muted,#aaa)', pr.cause));
+                det.appendChild(ol);
+                p.appendChild(det);
+            });
+        }
+        p.appendChild(el(doc, 'div', 'margin-top:10px;font-size:11px;color:var(--text-muted,#aaa)', 'F1 opens and closes this. Esc closes.'));
+        (doc.body || doc.documentElement).appendChild(p);
+        return true;
+    }
+
     var api = {
         PROTOCOL: PROTOCOL,
         TRUST_MINUTES: TRUST_MINUTES,
+        problem: problem,
+        explain: explain,
+        problemText: problemText,
+        showProblem: showProblem,
+        guard: guard,
+        fetchJson: fetchJson,
+        describe: describe,
+        described: null,
+        help: toggleHelp,
+        FALLBACK_PROBLEMS: FALLBACK_PROBLEMS,
         connectHost: connectHost,
         contracts: contracts,
         bus: bus,
@@ -636,5 +1018,6 @@
         esc: esc
     };
     root.APKSoftapp = api;
+    if (root.APK_SOFTAPP_GUARD !== false) guard();
     if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

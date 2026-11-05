@@ -97,7 +97,11 @@ export async function showDiscovered(host, opts) {
   };
   say('Asking the bus…', 'kinda');
   const d = await S.discovered({ kinds, onChange: draw });
-  if (!d.ok) say(d.reason, 'dead');
+  if (!d.ok) {
+    say(d.reason, 'dead');
+    // what happened / why / do this, in the status line, with Retry asking the bus again
+    if (d.problem && S.showProblem) S.showProblem(d.problem, { into: statusEl, subject: 'Discovered', onRetry: () => showDiscovered(host, opts) });
+  }
   else draw(d.things());
   return d;
 }

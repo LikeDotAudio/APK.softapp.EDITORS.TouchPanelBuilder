@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Touch Panel Designer</title>
+  <!-- Add to Home Screen: a phone saves the address bar as it stands, and the
+       address bar names the device and the page (syncLink), so each saved icon
+       reopens its own box full-screen. No manifest on purpose: a manifest's
+       fixed start_url would send every icon to the same blank editor. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#121212">
   <link rel="stylesheet" href="./vendor/apk-contracts/apk-tokens.css">
   <link rel="stylesheet" href="./css/theme.css">
   <link rel="stylesheet" href="./vendor/apk-table/apk-table.css">
@@ -111,6 +119,19 @@
     .page-tab .pt-x { color: var(--osc-text-muted); font-size: 10px; }
     .page-tab .pt-x:hover { color: var(--osc-status-danger); }
     .page-tab .pt-edit { width: 110px; font-size: 11px; background: var(--osc-bg-base, #111); color: var(--osc-text-primary); border: 1px solid var(--osc-accent-primary); }
+    .device-tabs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; margin-bottom: 6px; }
+    .device-tabs:empty { display: none; }
+    .device-tab {
+      display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: pointer; user-select: none;
+      font-size: 11px; font-weight: 600; color: var(--osc-text-muted); white-space: nowrap;
+      background: var(--osc-bg-surface); border: 1px solid var(--osc-border-default); border-radius: 12px;
+    }
+    .device-tab.on { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); }
+    .device-tab .dt-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; }
+    .device-tab.gone { opacity: 0.45; }
+    .device-tab.gone .dt-dot { background: #64748b; }
+    .device-tab.fresh { animation: dt-fresh 1.2s ease-out 3; }
+    @keyframes dt-fresh { 50% { box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.45); } }
     .page-add { background: none; border: 1px dashed var(--osc-border-default); color: var(--osc-text-muted); border-radius: 6px 6px 0 0; padding: 4px 10px; cursor: pointer; }
     .page-add:hover { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); }
 
@@ -280,6 +301,7 @@
     .verb-set { color: #38bdf8; }
     .verb-do { color: #f59e0b; }
     .verb-rig { color: #a78bfa; }
+    .verb-nab { color: #22d3ee; }
     .verb-get { color: #34d399; }
     .var-row .add {
       flex: none;
@@ -578,6 +600,9 @@
       <button class="btn btn-secondary" id="btn-sync-discovered" title="Load live touch surface from Discovered Project">
         <span class="btn-icon">⚡</span> Discovered
       </button>
+      <button class="btn btn-secondary" id="btn-link" title="Copy this panel's link — the address bar names the device and the page, so it can be shared or bookmarked">
+        <span class="btn-icon">🔗</span> Link
+      </button>
       <button class="btn btn-secondary" id="btn-open" title="Open block JSON">
         <span class="btn-icon">📂</span> Open
       </button>
@@ -629,6 +654,7 @@
       </aside>
 
       <main class="canvas-stage" id="canvas-stage">
+        <div class="device-tabs" id="device-tabs" title="Every device online on the bench: it gets a tab as it comes online"></div>
         <div class="page-tabs" id="page-tabs"></div>
         <div class="glass-fit" id="glass-fit">
           <div class="touchpanel-bezel" id="touchpanel-bezel">

@@ -3,10 +3,12 @@
 
 import { connectTouchPanelHost, panelBlock, panelMeta, bindPanelDevice } from './touchPanelHost.js';
 import { showDiscovered, loadDiscoveredConfig } from './discoveredPanel.js';
+import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, wantFor, arrivals } from './devicePanel.js';
 import {
-  CONTROL_DEFINITIONS, STYLE_FIELDS, BEHAVIOR_FIELDS, STYLE_PRESETS, widgetStyleVars,
+  CONTROL_DEFINITIONS, STYLE_FIELDS, BEHAVIOR_FIELDS, STYLE_PRESETS, widgetStyleVars, rigHeight,
 } from './controls.js';
 import { VINTAGE_LOOKS, loadLibraryLooks, groupLooks, lookFromField } from './lookLibrary.js';
+import { cloneControl, isHold, HOLD_MS } from './copyControl.js';
 import {
   ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType,
   humanLabel, bindingFor, matchesQuery,
@@ -84,11 +86,44 @@ export class TouchPanelApp {
     this.initElements();
     this.attachEvents();
     this.loadInitialData();
-    this.loadLibrary();
+    this.libraryReady = this.loadLibrary();
     this.loadLooks();
+    // Opened from a device's link (Discovery Engine, Discovered VISA → Links): start on its panel.
+    this.openFromLink();
 
     // The CAD bridge: cad.like.audio/host@1 through the vendored APKSoftapp client (ROAD-3491).
     this.host = window.APKSoftapp ? connectTouchPanelHost(window.APKSoftapp, this) : null;
+    if (window.APKSoftapp) this.describeSelf(window.APKSoftapp);
+  }
+
+  /* What the builder takes in, puts out and lets you control: the ? help panel (F1). */
+  describeSelf(S) {
+    S.describe({
+      name: 'Touch Panel Builder',
+      does: 'Designs a touch panel: pages of faders, knobs, buttons and meters on a chosen glass, each wired to an instrument variable, wearing a device theme or a look from the library.',
+      inputs: [
+        { name: 'Touch panel block', from: 'the CAD drawing when opened from the CAD', kind: 'cad' },
+        { name: 'Block file', from: 'a .json saved by this editor, picked with Open', kind: 'file' },
+        { name: 'Instrument library', from: 'GET /api/instrument/api (WEB.OsApi, every <Model>.api.json) — the models and their variables', kind: 'http' },
+        { name: 'Bench', from: 'GET /api/bim/instances, else /api/devices — the boxes online or remembered, re-read every 30 s', kind: 'http' },
+        { name: 'Looks', from: 'GET /FrontEnd/api/tree.json — the widget library looks (vintage palettes are built in)', kind: 'http' },
+        { name: 'A device\'s own panel', from: 'retained Gui/Panels/<device> when opened from a device link', kind: 'bus', topic: 'Gui/Panels/#' },
+        { name: 'Discovered surfaces', from: 'what the bus has discovered; which kinds show is config/discovered.json', kind: 'bus' },
+      ],
+      outputs: [
+        { name: 'Touch panel block', to: 'the CAD drawing on Save & Return, or a .json download when standalone', kind: 'file' },
+      ],
+      controls: [
+        { name: 'Add a control', how: 'Drag from the palette onto the glass, or + Add Widget' },
+        { name: 'Wire a control', how: 'Pick a model / bench device on the left, then drag a variable onto a control or its schedule row; double-click a wire to disconnect' },
+        { name: 'Pages', how: 'Tabs above the glass: click opens, + adds, double-click renames, drag reorders, ✕ deletes' },
+        { name: 'Screen / name', how: 'Panel name and screen preset in the top bar' },
+        { name: 'Theme and looks', how: '🎨 edits the device theme; 📚 Looks applies a look to the theme or the selected control (Esc closes)' },
+        { name: 'Schedule', how: 'The control table: edit fields, ▾ Styles opens every style editor, ⤢ Pop Out (Esc docks)' },
+        { name: 'Open / Save & Return / Close / Discovered', how: 'Top-bar buttons' },
+      ],
+      problems: ['fetch_failed', 'http_not_found', 'bad_json', 'bad_input', 'file_unreadable', 'bus_missing', 'device_stale'],
+    });
   }
 
   async loadLooks() {
@@ -386,6 +421,7 @@ export class TouchPanelApp {
 
   attachEvents() {
     this.btnOpen?.addEventListener('click', () => this.promptOpen());
+    document.getElementById('btn-link')?.addEventListener('click', () => this.copyLink());
     this.btnSave?.addEventListener('click', () => this.saveBlock());
     this.btnClose?.addEventListener('click', () => { if (this.host) this.host.close(); });
     this.btnSyncDiscovered?.addEventListener('click', () => this.toggleDiscovered());
@@ -535,6 +571,12 @@ export class TouchPanelApp {
         It is served by WEB.OsApi from PODS/POD.THICK/INSTRUMENTS. Open this editor through the
         portal (:8080) so the route resolves.</div>`;
       this.renderVariables();
+      window.APKSoftapp?.showProblem(this.library.error, {
+        subject: 'Instrument library (/api/instrument/api)',
+        fix: ['Open this editor through the portal (:8080) so /api/instrument/api resolves: WEB.OsApi serves it from PODS/POD.THICK/INSTRUMENTS.',
+          'If the portal is up, bring WEB.OsApi up (up-stack.sh WEB.OsApi), then Retry.'],
+        onRetry: () => { this.libraryReady = this.loadLibrary(); },
+      });
       return;
     }
 
@@ -553,12 +595,14 @@ export class TouchPanelApp {
     }
 
     this.renderDevices();
+    this.updateDeviceTabs();
     await this.loadSelectedVariables();
     // Liveness moves while you work: re-ask the bench every 30 s.
     if (!this.benchTimer) {
       this.benchTimer = setInterval(async () => {
         await this.library.refreshBench();
         this.renderDevices();
+        this.updateDeviceTabs();
       }, 30000);
     }
   }
@@ -574,6 +618,11 @@ export class TouchPanelApp {
         vars.forEach(v => this.varIndex.set(v.id, v));
       } catch (err) {
         this.varsByModel.set(key, { error: err });
+        window.APKSoftapp?.showProblem(err, {
+          subject: `Variables of ${key}`,
+          fix: [`The model's api.json is read from /api/instrument/api?model=…&family=… (WEB.OsApi). Check it is in PODS/POD.THICK/INSTRUMENTS and the image is current.`],
+          onRetry: () => { this.varsByModel.delete(key); this.loadSelectedVariables(); },
+        });
       }
     }));
     this.renderVariables();
@@ -800,7 +849,10 @@ export class TouchPanelApp {
 
   createWidgetFor(v, x = null, y = null) {
     const type = suggestWidgetType(v);
-    const def = CONTROL_DEFINITIONS[type] || CONTROL_DEFINITIONS.button;
+    const base = CONTROL_DEFINITIONS[type] || CONTROL_DEFINITIONS.button;
+    // A rig / nab is as tall as its arguments: one row each.
+    const multi = type === 'rig' || type === 'nab';
+    const def = multi ? { ...base, h: rigHeight((v.args || []).length) } : base;
     const n = this.panel.widgets.length + 1;
     const widget = {
       id: `w_${Date.now()}_${n}`,
@@ -816,6 +868,7 @@ export class TouchPanelApp {
       bindings: [],
     };
     if (v.values && type === 'tile') widget.subtitle = v.values.slice(0, 4).join(' · ');
+    if (multi) widget.behavior = { args: v.args || [] };
     this.panel.widgets.push(this.onPage(widget));
     this.bindVariable(widget, v);
   }
@@ -989,6 +1042,82 @@ export class TouchPanelApp {
     });
   }
 
+  /* THE DEVICE'S OWN TOUCH PANEL (ROAD-3503). ?model=&family=&resource=&serial=
+     names a box. Its presented panel (Gui/Panels/<key>, the Instruments tab's
+     frames) is the starting panel; a model that presents none starts from its
+     api.json, the same surface its plain GUI page draws. Nothing found is said
+     on screen; the sample layout stays. */
+  async openFromLink(asked = null) {
+    const want = asked || linkQuery(typeof location !== 'undefined' ? location.search : '');
+    if (!want.model) return;
+    this.opening = true;
+    const tag = document.getElementById('block-tag');
+    const say = (t) => { if (tag) tag.textContent = t; };
+    say(`LOOKING FOR ${want.model} ON THE BUS…`);
+    const cfg = await loadDiscoveredConfig();
+    const waitMs = Number(cfg.panel_wait_ms) || 0;
+    const doc = await this.presentedPanel(want, waitMs);
+    let p = doc ? panelFromPresented(doc, { placement: want.placement, width: this.panel.width, height: this.panel.height }) : null;
+    if (!p) {
+      await this.libraryReady;
+      const key = modelKey(want.family, want.model);
+      try {
+        const vars = await this.library.variables(key);
+        p = panelFromVariables(vars, { model: want.model, family: want.family,
+          device: this.deviceFor.get(key) || null, width: this.panel.width, height: this.panel.height });
+      } catch (_) { p = null; }
+    }
+    this.opening = false;
+    if (!p) { say(`${want.model}: NO PANEL PRESENTED AND NO API.JSON — SAMPLE LAYOUT`); return; }
+    this.handleBlockLoaded({ id: `tp_${(p.deviceId || want.model).replace(/[^A-Za-z0-9]/g, '_')}`,
+      name: p.name, pages: p.pages, widgets: p.widgets });
+    this.panel.deviceId = p.deviceId;
+    this.link = {
+      model: p.device.model || want.model, family: p.device.type || want.family,
+      serial: want.serial || p.device.serial || '', resource: want.resource || p.device.resource || '',
+      protocol: want.protocol, placement: want.placement,
+    };
+    const pageAsked = want.page && this.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
+    this.setPage(pageAsked ? pageAsked.id : this.panel.pages[0].id);
+    this.changed();
+    say(`${p.name} · FROM ${String(p.placement).toUpperCase()}`
+      + (p.placements.length > 1 ? ` · ALSO ${p.placements.slice(1).join(', ').toUpperCase()}` : ''));
+    await this.libraryReady;
+    const key = modelKey(p.device.type || want.family, p.device.model || want.model);
+    if (this.library.models.has(key)) this.selectModel(key);
+  }
+
+  /** The retained Gui/Panels/<key> document for the linked box, or null after waitMs.
+      The OS API reads it off the bus for us (a page on the portal has no /mqtt of
+      its own); inside the OS shell the bus answers directly. */
+  async presentedPanel(want, waitMs) {
+    const q = `model=${encodeURIComponent(want.model)}`;
+    for (const url of [`/api/instrument/panel?${q}`, `/api/os/instrument/panel?${q}`]) {
+      try {
+        const r = await fetch(url, { cache: 'no-store' });
+        if (!r.ok) continue;
+        const doc = ((await r.json()).panels || []).find(d => isPanelFor(d, want));
+        if (doc) return doc;
+        break;   // the API answered: nothing presented for this box
+      } catch (_) { /* this spelling is not served here */ }
+    }
+    const S = window.APKSoftapp;
+    const C = window.APKContracts;
+    const link = S && C && C.Topics && C.Topics.guiPanelsWildcard ? await S.bus() : null;
+    if (!link) return null;
+    return new Promise((resolve) => {
+      let off = null;
+      const done = (doc) => { clearTimeout(timer); try { off && off(); } catch (_) { /* gone */ } resolve(doc); };
+      const timer = setTimeout(() => done(null), waitMs);
+      off = link.subscribe(C.Topics.guiPanelsWildcard(), (_topic, text) => {
+        if (!text) return;
+        let doc = null;
+        try { doc = JSON.parse(text); } catch (_) { return; }
+        if (isPanelFor(doc, want)) done(doc);
+      });
+    });
+  }
+
   loadSampleLayout() {
     this.panel.widgets = [
       { id: 'w1', type: 'fader', label: 'MASTER VOL', x: 40, y: 50, w: 70, h: 220, address: '/dsp/master/level', channel: 1, bindings: [] },
@@ -1101,6 +1230,79 @@ export class TouchPanelApp {
     this.currentPage = id;
     if (this.selectedWidgetId && !this.isOnPage(this.widgetById(this.selectedWidgetId) || {})) this.selectedWidgetId = null;
     this.render();
+    this.syncLink();
+  }
+
+  /* DEVICE TABS. Every box online on the bench gets a tab as it comes online
+     (each 30 s bench read). The first one opens by itself when no device panel
+     is open yet; the rest wait, pulsing, for a click — opening one never throws
+     away the panel being edited: each tab keeps its own copy. A box that goes
+     offline keeps its tab, greyed. */
+  updateDeviceTabs() {
+    this.deviceTabs = this.deviceTabs || new Map();
+    const bench = this.library.bench || [];
+    const fresh = arrivals(bench, this.deviceTabs);
+    for (const d of fresh) this.deviceTabs.set(d.key, { d, want: wantFor(d), fresh: true, saved: null });
+    const online = new Set(bench.filter(d => d.liveness === 'online').map(d => d.key));
+    for (const [k, t] of this.deviceTabs) t.gone = !online.has(k);
+    if (!this.link && !this.opening && fresh.length && !linkQuery(location.search).model) this.openDevice(fresh[0].key);
+    // A link opened by URL is its box's tab.
+    if (this.link && !this.activeTab) {
+      const mine = [...this.deviceTabs].find(([, t]) => t.want.model === this.link.model
+        && (!this.link.serial || !t.want.serial || t.want.serial === this.link.serial));
+      if (mine) this.activeTab = mine[0];
+    }
+    this.renderDeviceTabs();
+  }
+
+  renderDeviceTabs() {
+    const el = document.getElementById('device-tabs');
+    if (!el || !this.deviceTabs) return;
+    el.innerHTML = [...this.deviceTabs].map(([k, t]) => `
+      <div class="device-tab ${k === this.activeTab ? 'on' : ''} ${t.gone ? 'gone' : ''} ${t.fresh && k !== this.activeTab ? 'fresh' : ''}"
+           data-key="${esc(k)}" title="${esc(t.d.name || k)}${t.gone ? ' · offline' : ' · online'}">
+        <span class="dt-dot"></span>${esc(t.d.model)}${t.want.serial ? ` <span class="pt-n">${esc(t.want.serial)}</span>` : ''}
+      </div>`).join('');
+    el.querySelectorAll('.device-tab').forEach(t => t.addEventListener('click', () => this.openDevice(t.dataset.key)));
+  }
+
+  async openDevice(key) {
+    const tab = this.deviceTabs && this.deviceTabs.get(key);
+    if (!tab || key === this.activeTab) return;
+    const was = this.activeTab && this.deviceTabs.get(this.activeTab);
+    if (was) was.saved = { panel: JSON.parse(JSON.stringify(this.panel)), page: this.currentPage, link: this.link };
+    this.activeTab = key;
+    tab.fresh = false;
+    if (tab.saved) {
+      this.handleBlockLoaded(tab.saved.panel);
+      this.panel.deviceId = tab.saved.panel.deviceId;
+      this.link = tab.saved.link;
+      this.setPage(tab.saved.page);
+    } else {
+      await this.openFromLink({ ...tab.want });
+    }
+    this.renderDeviceTabs();
+  }
+
+  /* THE ADDRESS BAR IS THE PANEL'S LINK. Once a device's panel is open, the
+     URL names the box (model, family, serial, resource, placement) and the
+     page showing, so it can be bookmarked or sent and reopens the same panel
+     on the same page. replaceState, not push: changing pages is not history. */
+  syncLink() {
+    if (!this.link || typeof history === 'undefined' || !history.replaceState) return;
+    const page = (this.panel.pages.find(p => p.id === this.currentPage) || {}).name || '';
+    const search = linkSearch({ ...this.link, page }, location.search);
+    if (search !== location.search) history.replaceState(history.state, '', `${location.pathname}${search}${location.hash}`);
+    // The name a bookmark or home-screen icon takes.
+    document.title = [this.link.model, this.link.serial, page].filter(Boolean).join(' · ') || 'Touch Panel Designer';
+  }
+
+  async copyLink() {
+    this.syncLink();
+    const href = location.href;
+    try { await navigator.clipboard.writeText(href); } catch (_) { window.prompt('This panel\'s link', href); return; }
+    const tag = document.getElementById('block-tag');
+    if (tag) { const was = tag.textContent; tag.textContent = 'LINK COPIED'; setTimeout(() => { tag.textContent = was; }, 1500); }
   }
 
   addPage() {
@@ -1387,24 +1589,55 @@ export class TouchPanelApp {
       el.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         this.selectWidget(w.id);
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const origX = w.x;
-        const origY = w.y;
+        let startX = e.clientX;
+        let startY = e.clientY;
+        let lastX = startX;
+        let lastY = startY;
+        // The control being dragged: this one, or its copy after a push-and-hold.
+        let dw = w;
+        let del = el;
+        let origX = w.x;
+        let origY = w.y;
+        let copied = false;
+        const pressedAt = Date.now();
+
+        // PUSH AND HOLD: still for HOLD_MS → a copy with every binding; keep
+        // holding and drag to place it (copyControl.js).
+        const holdTimer = setTimeout(() => {
+          if (!isHold(Date.now() - pressedAt, lastX - startX, lastY - startY)) return;
+          const copy = cloneControl(w, {
+            id: `w_${Date.now()}_${this.panel.widgets.length + 1}`,
+            bounds: { width: this.panel.width, height: this.panel.height },
+          });
+          this.panel.widgets.push(copy);
+          copied = true;
+          this.selectedWidgetId = copy.id;
+          this.render();
+          dw = copy;
+          del = this.surfaceEl.querySelector(`[data-wid="${CSS.escape(copy.id)}"]`) || el;
+          origX = copy.x;
+          origY = copy.y;
+          startX = lastX;
+          startY = lastY;
+          this.changed();
+        }, HOLD_MS);
 
         const onMove = (me) => {
-          w.x = Math.max(0, Math.round(origX + (me.clientX - startX) / this.glassScale));
-          w.y = Math.max(0, Math.round(origY + (me.clientY - startY) / this.glassScale));
-          el.style.left = `${w.x}px`;
-          el.style.top = `${w.y}px`;
+          lastX = me.clientX;
+          lastY = me.clientY;
+          dw.x = Math.max(0, Math.round(origX + (me.clientX - startX) / this.glassScale));
+          dw.y = Math.max(0, Math.round(origY + (me.clientY - startY) / this.glassScale));
+          del.style.left = `${dw.x}px`;
+          del.style.top = `${dw.y}px`;
           this.renderTableFieldsOnly();
           this.scheduleWires();
         };
 
         const onUp = () => {
+          clearTimeout(holdTimer);
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
-          if (w.x !== origX || w.y !== origY) this.changed();
+          if (copied || dw.x !== origX || dw.y !== origY) this.changed();
         };
 
         window.addEventListener('mousemove', onMove);
@@ -1563,14 +1796,21 @@ export class TouchPanelApp {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
+      const again = () => this.promptOpen();
       reader.onload = (re) => {
         try {
           const parsed = JSON.parse(re.target.result);
           this.handleBlockLoaded(parsed, { title: file.name });
         } catch (err) {
-          alert('Invalid JSON touch panel block');
+          const S = window.APKSoftapp;
+          if (!S) { alert('Invalid JSON touch panel block'); return; }
+          S.showProblem(err instanceof SyntaxError ? 'bad_json' : err, {
+            subject: file.name, detail: err.message, onRetry: again,
+            fix: ['Open a .json saved by this editor (Save & Return when standalone downloads one).'],
+          });
         }
       };
+      reader.onerror = () => window.APKSoftapp?.showProblem('file_unreadable', { subject: file.name, detail: reader.error && reader.error.message, onRetry: again });
       reader.readAsText(file);
     };
     input.click();

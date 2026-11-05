@@ -25,25 +25,34 @@ const API = {
   family: 'DMM',
   endpoints: {
     get: { Get_Volt: { command: 'Get_Volt', scpi: 'MEAS:VOLT?', arg: { kind: 'none' }, returns: { type: 'NR3' } } },
-    nab: { Get_Volt: { command: 'Get_Volt', scpi: 'MEAS:VOLT?', arg: { kind: 'none' } } },
+    nab: { Get_Volt: { command: 'Get_Volt', scpi: 'MEAS:VOLT?', arg: { kind: 'none' } },
+      Nab_Stats: { command: 'Nab_Stats', scpi: 'CALC:AVER:ALL?', arg: { kind: 'none' }, returns: { type: 'list', fields: ['min', 'max', 'avg'] } } },
     set: { Set_Range: { command: 'Set_Range', scpi: 'VOLT:RANG <v>', subsystem: 'SENSe', arg: { kind: 'numeric' },
       mqtt: { topic: 'APK.audio/Gui/Komands/DMM/Set_Range' } } },
-    rig: { Setup_Limits: { command: 'Setup_Limits', arg: { kind: 'numeric' } } },
+    rig: { Setup_Limits: { command: 'Setup_Limits', args: ['lower', 'upper'], arg: { kind: 'numeric', unit: 'V' } } },
     do: { Clear_Status: { command: 'Clear_Status', scpi: '*CLS', arg: { kind: 'none' } } },
   },
 };
 
-test('catalogue groups by family and counts variables without nab twins', () => {
+test('catalogue counts nabs only beyond their get twins', () => {
   const fams = groupCatalogue(CATALOGUE);
   assert.deepEqual(fams.map(f => f.family), ['DMM', 'Generator']);
   assert.equal(fams[0].models[0].variables, 5);
-  assert.equal(variableCount({ nab_count: 99 }), 0);
+  assert.equal(variableCount({ nab_count: 99 }), 99);
+  assert.equal(variableCount({ get_count: 5, nab_count: 7 }), 7);
   assert.match(fams[1].models[0].apiUrl, /model=33220A&family=Generator/);
 });
 
 test('api.json flattens to one variable per controllable command', () => {
   const vars = variablesFromApi(API);
-  assert.equal(vars.length, 4, 'nab is folded into get');
+  assert.equal(vars.length, 5, 'a nab twin of a get is folded into it; a multi-value nab stays');
+  const rig = vars.find(v => v.verb === 'rig');
+  assert.equal(suggestWidgetType(rig), 'rig');
+  assert.deepEqual(rig.args.map(a => [a.name, a.unit]), [['lower', 'V'], ['upper', '']]);
+  const nab = vars.find(v => v.verb === 'nab');
+  assert.equal(nab.command, 'Nab_Stats');
+  assert.equal(suggestWidgetType(nab), 'nab');
+  assert.deepEqual(nab.args.map(a => a.name), ['min', 'max', 'avg']);
   const set = vars.find(v => v.verb === 'set');
   assert.equal(set.id, 'DMM/34401A/set/Set_Range');
   assert.equal(set.topic, 'APK.audio/Gui/Komands/DMM/Set_Range');
@@ -107,6 +116,6 @@ test('ControlLibrary loads catalogue then a model, falling back to /api/os/', as
   assert.equal(lib.totalModels, 2);
   assert.equal(lib.totalVariables, 8);
   const vars = await lib.variables('DMM/34401A');
-  assert.equal(vars.length, 4);
+  assert.equal(vars.length, 5);
   assert.ok(asked.includes('/api/os/instrument/api'));
 });
