@@ -95,6 +95,12 @@
       transform-origin: 0 0;
     }
 
+    iframe.engine-glass { position: absolute; top: 0; left: 0; border: 0; z-index: 0; pointer-events: none; background: transparent; }
+    .touchpanel-surface { z-index: 1; }
+    .touchpanel-surface.engine-on { background: transparent !important; }
+    .touchpanel-surface.engine-on .touch-widget > :not(.w-port):not(.w-badge) { opacity: 0; }
+    #btn-engine-glass.on { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); background: var(--osc-bg-input); }
+
     .glass-scale {
       position: absolute;
       bottom: 6px;
@@ -670,7 +676,10 @@
 
       <main class="canvas-stage" id="canvas-stage">
         <div class="device-tabs" id="device-tabs" title="Every device online on the bench: it gets a tab as it comes online"></div>
-        <div class="page-tabs" id="page-tabs"></div>
+        <div style="display:flex; align-items:flex-end; gap:8px; max-width:100%;">
+          <div class="page-tabs" id="page-tabs"></div>
+          <button class="verb-chip" id="btn-engine-glass" title="Draw the page with the real widget engine (the controls stay editable on top)">⚙ Engine glass</button>
+        </div>
         <div class="glass-fit" id="glass-fit">
           <div class="touchpanel-bezel" id="touchpanel-bezel">
             <div class="touchpanel-surface" id="touchpanel-surface"></div>

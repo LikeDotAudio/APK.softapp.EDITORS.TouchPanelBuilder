@@ -56,7 +56,7 @@ const GROUP_HW = {
 
 export const VINTAGE_LOOKS = [
   L(AN, 'Neve 80-Series', '1970s', ['#56697a', '#2e3b47', '#d9472b', '#f1f1ea', '#b9bec2', '#4a5c6c', '#2b3640'],
-    { rows: ['#c8372d', '#9aa3aa', '#2f5fa8', '#2f5fa8', '#c8372d'], capShape: 'skirt', pointer: 'line', faderCap: 'square', buttonShape: 'square' }),
+    { rows: ['#c8372d', '#9aa3aa', '#2f5fa8', '#2f5fa8', '#c8372d'], capShape: 'marconi', pointer: 'line', faderCap: 'square', buttonShape: 'square' }),
   L(AN, 'SSL 4000 E', '1979', ['#3b3e42', '#1f2124', '#e0b23a', '#f2f2f2', '#2b2b2b', '#2f3236', '#1a1b1d'],
     { rows: ['#d23a2f', '#2e7d32', '#1e5aa8', '#e0b23a', '#7a7a7a'], capShape: 'circle', pointer: 'line', faderCap: 'tall', buttonShape: 'lit' }),
   L(AN, 'SSL 4000 G', '1987', ['#44484d', '#25272a', '#3f8fd2', '#f2f2f2', '#d8d8d8', '#373a3e', '#1d1e20'],
@@ -119,7 +119,7 @@ export const VINTAGE_LOOKS = [
   L(OB, 'Pultec EQP-1A', '1950s', ['#5d7286', '#2d3a46', '#f2f2f2', '#f2f2f2', '#111111', '#4e6274', '#222c36'], { preview: ['knob', 'knob', 'selector'], capShape: 'chicken', pointer: 'vintage' }),
   L(OB, 'Fairchild 670', '1950s', ['#7c7f80', '#3d3f40', '#c9a14a', '#111111', '#151515', '#6b6e6f', '#2f3132'], { capShape: 'bakelite', pointer: 'vintage', buttonShape: 'lamp' }),
 
-  L(SY, 'Minimoog Model D', '1970', ['#121212', '#7a4a26', '#e9e3d0', '#e9e3d0', '#0e0e0e', '#161616', '#6b3f1f'], { radius: 2, shadow: 'deep', preview: ['knob', 'knob', 'button'] }),
+  L(SY, 'Minimoog Model D', '1970', ['#121212', '#7a4a26', '#e9e3d0', '#e9e3d0', '#0e0e0e', '#161616', '#6b3f1f'], { radius: 2, shadow: 'deep', capShape: 'moog', preview: ['knob', 'knob', 'button'] }),
   L(SY, 'ARP 2600', '1971', ['#9fa4a8', '#4d5154', '#ffffff', '#111111', '#f2f2f2', '#8c9195', '#3b3e41'], { radius: 2, preview: ['fader', 'fader', 'button'] }),
   L(SY, 'ARP Odyssey', '1972', ['#111111', '#2b2b2b', '#e8792a', '#f2f2f2', '#f2f2f2', '#0c0c0c', '#1e1e1e'], { radius: 2, preview: ['fader', 'fader', 'button'] }),
   L(SY, 'Sequential Prophet-5', '1978', ['#121212', '#6b3d1f', '#d9d4c3', '#e8e3d1', '#1a1a1a', '#0f0f0f', '#5a3318'], { radius: 2, shadow: 'deep', capShape: 'flange', buttonShape: 'square', preview: ['knob', 'knob', 'button'] }),

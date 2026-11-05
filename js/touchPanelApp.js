@@ -144,6 +144,53 @@ export class TouchPanelApp {
 
   changed() {
     if (this.host) this.host.changed(panelBlock(this.panel));
+    this.scheduleEngineGlass();
+  }
+
+  // ENGINE GLASS (ROAD-3499): the real widget engine draws the open page at its
+  // true pixels behind the glass (frame host iframe beside the surface, so a
+  // re-render of the surface never reloads it). The stand-ins stay on top,
+  // invisible, so selecting, dragging, ports and wires work as before.
+  setEngineGlass(on) {
+    this.engineGlass = !!on;
+    this.surfaceEl.classList.toggle('engine-on', this.engineGlass);
+    const btn = document.getElementById('btn-engine-glass');
+    if (btn) btn.classList.toggle('on', this.engineGlass);
+    let frame = this.bezelEl.querySelector('iframe.engine-glass');
+    if (!this.engineGlass) { if (frame) frame.hidden = true; return; }
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.className = 'engine-glass';
+      frame.title = 'Engine glass';
+      frame.src = '/FrontEnd/apkos-frame-host.html';
+      this.bezelEl.insertBefore(frame, this.surfaceEl);
+      window.addEventListener('message', (e) => {
+        if (e.data?.type === 'apkos:frame-host-ready' && e.source === frame.contentWindow) this.postEngineGlass();
+      });
+    }
+    frame.hidden = false;
+    this.postEngineGlass();
+  }
+
+  scheduleEngineGlass() {
+    if (!this.engineGlass) return;
+    clearTimeout(this.engineTimer);
+    this.engineTimer = setTimeout(() => this.postEngineGlass(), 250);
+  }
+
+  postEngineGlass() {
+    const frame = this.bezelEl?.querySelector('iframe.engine-glass');
+    if (!this.engineGlass || !frame?.contentWindow) return;
+    frame.style.width = `${this.panel.width}px`;
+    frame.style.height = `${this.panel.height}px`;
+    const page = this.panel.pages.find(p => p.id === this.currentPage) || this.panel.pages[0];
+    const one = { ...this.panel, pages: [page], widgets: this.panel.widgets.filter(w => this.isOnPage(w)) };
+    const out = panelToFrame(one, (w) => this.effectiveStyle(w));
+    // Bare glass: no panel cover, no block title — the block IS the screen.
+    const bin = Object.values(out).find(v => v && v.type === 'OcaBin') || out;
+    bin.background = { enabled: false };
+    for (const b of Object.values(bin.blocks || {})) b.description = { ...(b.description || {}), show_label: false };
+    frame.contentWindow.postMessage({ type: 'apkos:render-frame', layoutJson: out, filePath: `TouchPanels/${this.panel.name || 'panel'}.json` }, '*');
   }
 
   initElements() {
@@ -230,6 +277,9 @@ export class TouchPanelApp {
       }
       w.style = { ...look.style };
       w.lookId = look.id;
+      // A library element keeps its whole config: the engine draws the control
+      // from it (frameExport uses `field` as the base), not from five colours.
+      if (look.field) w.field = JSON.parse(JSON.stringify(look.field)); else delete w.field;
       this.selectedWidgetId = w.id;
     }
     this.render();
@@ -429,6 +479,7 @@ export class TouchPanelApp {
     this.btnOpen?.addEventListener('click', () => this.promptOpen());
     document.getElementById('btn-export-frame')?.addEventListener('click', () => this.exportFrame());
     document.getElementById('btn-engine-preview')?.addEventListener('click', () => this.openEnginePreview());
+    document.getElementById('btn-engine-glass')?.addEventListener('click', () => this.setEngineGlass(!this.engineGlass));
     document.getElementById('engine-close')?.addEventListener('click', () => { document.getElementById('engine-preview').hidden = true; });
     document.getElementById('btn-link')?.addEventListener('click', () => this.copyLink());
     this.btnSave?.addEventListener('click', () => this.saveBlock());
@@ -1778,6 +1829,7 @@ export class TouchPanelApp {
       this.surfaceEl.appendChild(el);
     });
     this.fitGlass();
+    this.scheduleEngineGlass();
   }
 
   renderTable() {

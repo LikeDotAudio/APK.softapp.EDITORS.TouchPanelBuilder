@@ -67,6 +67,7 @@ test('fields carry label, size, grid place and bus path; no top-level x/y', () =
   assert.equal(f.layout.height, w.h);
   assert.equal(f.layout.column, Math.floor(w.x / GRID) + 1);
   assert.equal(f.layout.row, Math.floor(w.y / GRID) + 1);
+  assert.deepEqual([f.layout.position, f.layout.left, f.layout.top], ['absolute', w.x, w.y], 'true pixels for an absolute block');
   assert.equal(f.topic, w.address, 'the control\'s own address wins: a device panel binds many controls to one write topic');
   const bare = widgetToField({ ...w, address: '' }, {});
   assert.equal(bare.topic, TOPIC, 'with no address, the first binding\'s topic');
@@ -81,14 +82,18 @@ test('fields carry label, size, grid place and bus path; no top-level x/y', () =
 });
 
 test('colours land in the keys each widget reads', () => {
-  const style = { accent: '#a00', bg: '#111', border: '#222', text: '#eee', cap: '#ccc', faderCap: '#ddd', radius: 4, borderWidth: 2 };
+  const style = { accent: '#a00', bg: '#111', border: '#222', text: '#eee', cap: '#ccc', faderCap: 'tall', capShape: 'knurled', pointer: 'Dot', radius: 4, borderWidth: 2 };
   const base = { id: 'w', label: 'X', x: 0, y: 0, w: 100, h: 100, bindings: [] };
   const knob = widgetToField({ ...base, type: 'knob' }, style);
   assert.equal(knob.cosmetics.colors.primary, '#a00');
   assert.equal(knob.cosmetics.colors.cap, '#ccc');
   assert.equal(knob.cosmetics.styling.fill_color, '#111');
+  assert.equal(knob.cosmetics.visualization, 'wbs-elma', 'a stand-in cap shape becomes the engine\'s cap family');
+  assert.equal(knob.cosmetics.pointer.style, 'dot');
+  assert.equal(widgetToField({ ...base, type: 'knob' }, { capShape: 'moog' }).cosmetics.visualization, 'moog', 'library names pass through');
+  assert.deepEqual(widgetToField({ ...base, type: 'knob' }, { capShape: 'gear' }).cosmetics.style_overrides, { shape: 'gear' });
   const fader = widgetToField({ ...base, type: 'fader', w: 70, h: 220 }, style);
-  assert.equal(fader.cosmetics.colors.cap, '#ddd');
+  assert.equal(fader.cosmetics.colors.cap, '#ccc', 'faderCap is a shape name, never a colour');
   assert.equal(fader.cosmetics.colors.highlight, '#a00');
   assert.equal(fader.style.orientation, 'vertical');
   const button = widgetToField({ ...base, type: 'button' }, style);
@@ -235,4 +240,12 @@ test('the touch_panel key is namespaced on bin and fields', () => {
   const frame = panelToFrame(samplePanel());
   assert.ok(binOf(frame)[TP_KEY].panel);
   for (const f of fieldsOf(frame)) assert.ok(f[TP_KEY].widget);
+});
+
+test('each page is an absolute canvas the size of the glass (engine layout.mode absolute)', () => {
+  const p = samplePanel();
+  const bin = Object.values(panelToFrame(p)).find(v => v && v.type === 'OcaBin');
+  for (const block of Object.values(bin.blocks)) {
+    assert.deepEqual(block.layout, { mode: 'absolute', canvas_width: p.width || 1280, canvas_height: p.height || 800 });
+  }
 });

@@ -15,10 +15,12 @@
    - the bus path of a leaf is `node.topic`, else `<path_prefix>/<field key>`
      (FieldComponent.jsx OaFieldBody). So the field carries `topic`.
    - sizes are `geometry.width/height` and `layout.width/height`;
-   - placement is a CSS grid only: OcaBlock `layout_columns` and per-field
-     `layout.column / row / col_span / row_span` (WidgetFactory.jsx gridStyles).
-     There is NO absolute x/y placement in the engine, so x/y are approximated
-     on a GRID-px grid here and kept exactly in `touch_panel`.
+   - placement: an OcaBlock with `layout.mode: "absolute"` is a fixed canvas
+     (canvas_width × canvas_height) and a field with `layout.position:
+     "absolute"` sits at `layout.left / top` (OcaBlock.jsx, WidgetFactory.jsx,
+     since ROAD-3499). Both are written, so the glass lands pixel for pixel; the
+     grid place (`layout.column / row`, GRID px) is written too, for an engine
+     older than that, and the exact panel stays in `touch_panel`.
    - `x` / `y` at a field's top level are NOT free: the MDP reads config.x /
      config.y as its puck centre in its own canvas. The panel's x/y live only
      in touch_panel; an MDP field gets x/y = the centre of its own box.
@@ -41,6 +43,13 @@ export const TP_KEY = 'touch_panel';
    devicePanel's FRAME_TO_CONTROL maps each of these back to the same control
    (rig / nab come back through its section rule); readout is anything it does
    not know. */
+// The panel's stand-in cap shapes -> the engine's cap families. Library names
+// (1176, moog, api, british, chicken, marconi, pedal, wbs-elma, crafty, fender)
+// pass through as they are.
+export const CAP_FAMILY = {
+  skirt: 'british', flange: '1176', knurled: 'wbs-elma', concentric: 'api', bakelite: 'marconi', circle: 'standard',
+};
+
 export const CONTROL_TO_FRAME = {
   knob: '_GuiKnob',
   fader: '_GuiFader',
@@ -122,15 +131,23 @@ function cosmeticsFor(type, s) {
     case 'knob':
     case 'selector':
       set(colors, 'primary', s.accent);
-      set(colors, 'active', s.pointer || s.accent);
+      set(colors, 'active', s.accent);
       set(colors, 'secondary', s.border);
       set(colors, 'text', s.text);
       set(colors, 'tick', s.text);
       set(colors, 'cap', s.cap);
       if (s.bg) out.styling = { fill_color: s.bg };
+      // The engine's own caps (libControl/Knobs/Knob resolveCap): a cap family
+      // by name, gear / octagon as a shape over the standard cap.
+      if (s.capShape) {
+        const shape = String(s.capShape).toLowerCase();
+        if (shape === 'gear' || shape === 'octagon') out.style_overrides = { shape };
+        else out.visualization = CAP_FAMILY[shape] || shape;
+      }
+      if (s.pointer) out.pointer = { style: String(s.pointer).toLowerCase() };
       break;
     case 'fader':
-      set(colors, 'cap', s.faderCap || s.cap);
+      set(colors, 'cap', s.cap);
       set(colors, 'highlight', s.accent);
       set(colors, 'primary', s.bg);
       set(colors, 'tick_color', s.text);
@@ -257,7 +274,10 @@ export function widgetToField(w, style = {}, index = 0) {
   field.label = { En: String(w.label ?? '') };
   field.geometry = { ...(isObj(field.geometry) ? field.geometry : {}), width: wpx, height: hpx };
   if (type === 'meter' && !lib) field.geometry.orientation = wpx > hpx ? 'horiz' : 'vert';
-  field.layout = { ...(isObj(field.layout) ? field.layout : {}), width: wpx, height: hpx, ...gridPlace(w) };
+  field.layout = {
+    ...(isObj(field.layout) ? field.layout : {}), width: wpx, height: hpx, ...gridPlace(w),
+    position: 'absolute', left: Math.max(0, Math.round(num(w.x) || 0)), top: Math.max(0, Math.round(num(w.y) || 0)),
+  };
   if (type === 'button' || type === 'tile') field.layout.corner_radius = px(style.radius) ?? 6;
 
   const b = (w.bindings || [])[0];
@@ -281,6 +301,7 @@ export function panelToFrame(panel, effectiveStyleFn) {
   const p = panel || {};
   const styleOf = typeof effectiveStyleFn === 'function' ? effectiveStyleFn : defaultStyleOf(p);
   const W = num(p.width) || 1280;
+  const H = num(p.height) || 800;
   const pages = Array.isArray(p.pages) && p.pages.length ? p.pages : [{ id: '', name: 'Main' }];
   const widgets = Array.isArray(p.widgets) ? p.widgets : [];
   const known = new Set(pages.map(pg => pg.id));
@@ -295,6 +316,7 @@ export function panelToFrame(panel, effectiveStyleFn) {
       type: 'OcaBlock',
       description: { En: String(pg.name || key) },
       layout_columns: Math.max(1, Math.ceil(W / GRID)),
+      layout: { mode: 'absolute', canvas_width: W, canvas_height: H },
       fields: {},
     };
     blocks[key] = block;
