@@ -1,9 +1,7 @@
 {
   "_about": "What the Discovered panel lists: things on the bus whose kinds (a protocol that saw them, the scanner's kind segment or their device_class) contain one of these words, case-insensitive: the panels and surfaces a layout can be bound to. Tunables only: source holds no device list. An empty list shows everything.",
+  "_measured": "Bench broker 2026-11-04 (ROAD-3502). 'midi' confirmed: protocol midi, device_class 'MIDI Interface' (e.g. midi/Device/Output/Dev1/name 'Arturia MicroLab:Arturia MicroLab  28:0'). 'hid' is PLUGIN.SPACENAVIGATOR's BareMetal target (HID), 'unavailable' on the bench, so nothing matches it today. 'touch', 'panel' and 'surface' were dropped: no plugin publishes a protocol, kind or device_class with those words (a device's own panel is Gui/Panels/<key>, which this builder reads by itself).",
   "kinds": [
-    "touch",
-    "panel",
-    "surface",
     "midi",
     "hid"
   ],
