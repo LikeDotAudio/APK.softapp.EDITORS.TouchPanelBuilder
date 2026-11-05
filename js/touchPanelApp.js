@@ -10,6 +10,7 @@ import { VINTAGE_LOOKS, loadLibraryLooks, groupLooks, lookFromField } from './lo
 import {
   ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType,
   humanLabel, bindingFor, matchesQuery,
+  agoText,
 } from './library.js';
 
 export const SCREEN_PRESETS = [
@@ -45,8 +46,12 @@ export class TouchPanelApp {
       // The device theme: every control on this glass wears it unless the
       // control's own style says otherwise.
       theme: { preset: 'Deep Horizon', style: {} },
+      // Pages: the tabs across the top of the designer. Every control lives on
+      // one (`w.page`); a control without one is on the first.
+      pages: [{ id: 'p1', name: 'Main' }],
       widgets: [],
     };
+    this.currentPage = 'p1';
 
     this.selectedWidgetId = null;
     this.glassScale = 1;
@@ -72,7 +77,7 @@ export class TouchPanelApp {
     this.verbFilter = new Set(VERBS);
     this.varQuery = '';
     this.devQuery = '';
-    this.collapsed = new Set();
+    this.collapsed = new Set(['__offline']);
     this.varLimit = VAR_PAGE;
     this.wireFrame = 0;
 
@@ -180,7 +185,7 @@ export class TouchPanelApp {
           channel: 1,
           bindings: [],
         };
-        this.panel.widgets.push(w);
+        this.panel.widgets.push(this.onPage(w));
       }
       w.style = { ...look.style };
       w.lookId = look.id;
@@ -549,6 +554,13 @@ export class TouchPanelApp {
 
     this.renderDevices();
     await this.loadSelectedVariables();
+    // Liveness moves while you work: re-ask the bench every 30 s.
+    if (!this.benchTimer) {
+      this.benchTimer = setInterval(async () => {
+        await this.library.refreshBench();
+        this.renderDevices();
+      }, 30000);
+    }
   }
 
   async loadSelectedVariables() {
@@ -605,20 +617,32 @@ export class TouchPanelApp {
 
     this.devCount.textContent = `${lib.totalModels} devices · ${lib.totalVariables.toLocaleString()} variables`;
 
-    const benchRows = lib.bench.filter(d => !q || `${d.name} ${d.model} ${d.family} ${d.address}`.toLowerCase().includes(q));
-    if (benchRows.length) {
-      parts.push(`<div class="lib-group" data-group="__bench"><span>${this.collapsed.has('__bench') ? '▸' : '▾'}</span>
-        <span class="grow">On the bench</span><span>${benchRows.length}</span></div>`);
-      if (!this.collapsed.has('__bench')) {
-        benchRows.forEach((d, i) => {
-          const k = modelKey(d.family, d.model);
-          parts.push(`<div class="lib-row ${sel.has(k) ? 'on' : ''}" data-mkey="${esc(k)}" data-bench="${i}">
-            <span class="dot ${d.status === 'online' ? 'online' : ''}" title="${esc(d.status)}"></span>
-            <span class="main"><span>${esc(d.name)}</span><span class="sub">${esc(d.family)} · ${esc(d.address)}</span></span>
-            ${bound.get(k) ? `<span class="bound">${bound.get(k)}⇄</span>` : ''}
-            <span class="n">${d.variables}</span></div>`);
-        });
-      }
+    // ONLINE / RECENT / UNKNOWN are pinned open at the top; offline boxes stay
+    // listed (greyed) under them so bindings to a switched-off box survive.
+    const benchRows = lib.bench.filter(d => !q || `${d.name} ${d.make} ${d.model} ${d.family} ${d.address}`.toLowerCase().includes(q));
+    const nowSecs = Math.floor(Date.now() / 1000);
+    const benchRow = (d) => {
+      const i = lib.bench.indexOf(d);
+      const k = d.known ? modelKey(d.family, d.model) : '';
+      const label = [d.icon, d.make, d.model].filter(Boolean).join(' ') || d.name;
+      return `<div class="lib-row bench ${d.liveness} ${k && sel.has(k) ? 'on' : ''}" ${k ? `data-mkey="${esc(k)}"` : ''} data-bench="${i}"
+          title="${esc(d.name)} · ${esc(d.liveness)} · ${esc(agoText(d.lastSeen, nowSecs))}${d.address ? '\n' + esc(d.address) : ''}">
+        <span class="dot ${d.liveness}"></span>
+        <span class="main"><span>${esc(label)}</span><span class="sub">${esc(d.name)} · ${esc(d.liveness === 'unknown' ? 'status unknown' : agoText(d.lastSeen, nowSecs))}</span></span>
+        ${k && bound.get(k) ? `<span class="bound">${bound.get(k)}⇄</span>` : ''}
+        <span class="n">${d.known ? d.variables : '—'}</span></div>`;
+    };
+    const live = benchRows.filter(d => d.liveness !== 'offline');
+    const off = benchRows.filter(d => d.liveness === 'offline');
+    const counts = ['online', 'recent', 'unknown'].map(l => [l, live.filter(d => d.liveness === l).length]).filter(([, n]) => n);
+    parts.push(`<div class="lib-group pinned"><span class="grow">Online &amp; recent</span>
+      <span>${counts.map(([l, n]) => `<i class="dot ${l}"></i>${n}`).join(' ') || '0'}</span></div>`);
+    parts.push(live.length ? live.map(benchRow).join('') : '<div class="lib-empty">Nothing online or seen recently.</div>');
+    if (off.length) {
+      const open = !this.collapsed.has('__offline') || q;
+      parts.push(`<div class="lib-group" data-group="__offline"><span>${open ? '▾' : '▸'}</span>
+        <span class="grow">Offline · kept for bindings</span><span>${off.length}</span></div>`);
+      if (open) parts.push(off.map(benchRow).join(''));
     }
 
     lib.families.forEach(fam => {
@@ -655,7 +679,8 @@ export class TouchPanelApp {
       this.renderDevices();
     }));
     this.devList.querySelectorAll('.lib-row').forEach(r => r.addEventListener('click', (e) => {
-      const device = r.dataset.bench !== undefined ? benchRows[Number(r.dataset.bench)] : null;
+      const device = r.dataset.bench !== undefined ? lib.bench[Number(r.dataset.bench)] : null;
+      if (!r.dataset.mkey) return; // a box the instrument library has no api for
       this.selectModel(r.dataset.mkey, { additive: e.shiftKey || e.ctrlKey || e.metaKey, device });
     }));
     this.scheduleWires();
@@ -791,7 +816,7 @@ export class TouchPanelApp {
       bindings: [],
     };
     if (v.values && type === 'tile') widget.subtitle = v.values.slice(0, 4).join(' · ');
-    this.panel.widgets.push(widget);
+    this.panel.widgets.push(this.onPage(widget));
     this.bindVariable(widget, v);
   }
 
@@ -800,7 +825,7 @@ export class TouchPanelApp {
     const W = this.panel.width || 1280;
     const H = this.panel.height || 800;
     const gap = 10;
-    const hits = (x, y) => this.panel.widgets.some(o =>
+    const hits = (x, y) => this.panel.widgets.filter(o => this.isOnPage(o)).some(o =>
       x < o.x + o.w + gap && x + w + gap > o.x && y < o.y + o.h + gap && y + h + gap > o.y);
     for (let y = 20; y + h <= H - 10; y += 10) {
       for (let x = 20; x + w <= W - 10; x += 10) {
@@ -993,7 +1018,7 @@ export class TouchPanelApp {
       channel: 1,
       bindings: [],
     };
-    this.panel.widgets.push(widget);
+    this.panel.widgets.push(this.onPage(widget));
     this.selectedWidgetId = widget.id;
     this.render();
     this.changed();
@@ -1007,8 +1032,8 @@ export class TouchPanelApp {
       el.classList.toggle('selected', on);
       el.style.outline = on ? '2px solid var(--osc-accent-primary)' : '';
     });
-    [...(this.tableBody?.children || [])].filter(r => !r.classList.contains('detail-row')).forEach((tr, i) => {
-      tr.style.background = this.panel.widgets[i]?.id === id ? 'var(--osc-bg-surface-hover)' : '';
+    this.tableBody?.querySelectorAll('tr[data-wid]').forEach(tr => {
+      tr.style.background = tr.dataset.wid === id ? 'var(--osc-bg-surface-hover)' : '';
     });
     this.scheduleWires();
   }
@@ -1029,6 +1054,12 @@ export class TouchPanelApp {
       this.panel.savedLooks = Array.isArray(block.savedLooks) ? block.savedLooks : [];
       this.setupThemeDropdown();
     }
+    if (Array.isArray(block.pages) && block.pages.length) {
+      this.panel.pages = block.pages.filter(p => p && p.id).map(p => ({ id: String(p.id), name: String(p.name || p.id) }));
+    } else {
+      this.panel.pages = [{ id: 'p1', name: 'Main' }];
+    }
+    this.currentPage = this.panel.pages[0].id;
     if (Array.isArray(block.widgets)) {
       this.panel.widgets = block.widgets.map(w => ({ bindings: [], ...w }));
     }
@@ -1047,6 +1078,110 @@ export class TouchPanelApp {
     const tag = document.getElementById('block-tag');
     if (tag && how) tag.textContent = how === 'host' ? 'SAVED TO THE CAD' : 'DOWNLOADED .JSON';
     return how;
+  }
+
+  // ------------------------------------------------------------------ pages
+
+  pageOf(w) {
+    const ids = this.panel.pages.map(p => p.id);
+    return ids.includes(w.page) ? w.page : ids[0];
+  }
+
+  isOnPage(w) {
+    return this.pageOf(w) === this.currentPage;
+  }
+
+  onPage(w) {
+    if (!w.page) w.page = this.currentPage;
+    return w;
+  }
+
+  setPage(id) {
+    if (!this.panel.pages.some(p => p.id === id)) id = this.panel.pages[0].id;
+    this.currentPage = id;
+    if (this.selectedWidgetId && !this.isOnPage(this.widgetById(this.selectedWidgetId) || {})) this.selectedWidgetId = null;
+    this.render();
+  }
+
+  addPage() {
+    let n = this.panel.pages.length + 1;
+    while (this.panel.pages.some(p => p.id === `p${n}`)) n += 1;
+    const page = { id: `p${n}`, name: `Page ${n}` };
+    this.panel.pages.push(page);
+    this.setPage(page.id);
+    this.changed();
+  }
+
+  renamePage(id) {
+    const page = this.panel.pages.find(p => p.id === id);
+    const tab = this.pageTabsEl?.querySelector(`[data-page="${CSS.escape(id)}"] .pt-name`);
+    if (!page || !tab) return;
+    const input = document.createElement('input');
+    input.className = 'pt-edit';
+    input.value = page.name;
+    tab.replaceWith(input);
+    input.focus();
+    input.select();
+    const done = (keep) => {
+      if (keep && input.value.trim()) page.name = input.value.trim();
+      this.renderPageTabs();
+      this.renderTable();
+      this.changed();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') done(true);
+      if (e.key === 'Escape') done(false);
+      e.stopPropagation();
+    });
+    input.addEventListener('blur', () => done(true));
+  }
+
+  deletePage(id) {
+    if (this.panel.pages.length < 2) return;
+    const page = this.panel.pages.find(p => p.id === id);
+    const on = this.panel.widgets.filter(w => this.pageOf(w) === id);
+    if (on.length && !confirm(`Delete page “${page.name}” and its ${on.length} control${on.length === 1 ? '' : 's'}?`)) return;
+    this.panel.widgets = this.panel.widgets.filter(w => this.pageOf(w) !== id);
+    const i = this.panel.pages.findIndex(p => p.id === id);
+    this.panel.pages.splice(i, 1);
+    this.setPage(this.panel.pages[Math.max(0, i - 1)].id);
+    this.changed();
+  }
+
+  renderPageTabs() {
+    const el = this.pageTabsEl || (this.pageTabsEl = document.getElementById('page-tabs'));
+    if (!el) return;
+    const count = (id) => this.panel.widgets.filter(w => this.pageOf(w) === id).length;
+    el.innerHTML = this.panel.pages.map(p => `
+      <div class="page-tab ${p.id === this.currentPage ? 'on' : ''}" data-page="${esc(p.id)}" draggable="true"
+           title="Click to open · double-click to rename · drag to reorder">
+        <span class="pt-name">${esc(p.name)}</span><span class="pt-n">${count(p.id)}</span>
+        ${this.panel.pages.length > 1 ? '<span class="pt-x" title="Delete page">✕</span>' : ''}
+      </div>`).join('') + '<button class="page-add" title="Add a page">＋</button>';
+    el.querySelectorAll('.page-tab').forEach(t => {
+      const id = t.dataset.page;
+      t.addEventListener('click', (e) => {
+        if (e.target.closest('.pt-x')) { this.deletePage(id); return; }
+        if (e.target.closest('.pt-edit')) return;
+        if (id !== this.currentPage) this.setPage(id);
+      });
+      t.addEventListener('dblclick', () => this.renamePage(id));
+      t.addEventListener('dragstart', (e) => { e.dataTransfer.setData('application/x-apk-page', id); });
+      t.addEventListener('dragover', (e) => {
+        if (e.dataTransfer.types.includes('application/x-apk-page')) e.preventDefault();
+      });
+      t.addEventListener('drop', (e) => {
+        const from = e.dataTransfer.getData('application/x-apk-page');
+        if (!from || from === id) return;
+        e.preventDefault();
+        const pages = this.panel.pages;
+        const moved = pages.splice(pages.findIndex(p => p.id === from), 1)[0];
+        pages.splice(pages.findIndex(p => p.id === id), 0, moved);
+        this.renderPageTabs();
+        this.changed();
+      });
+    });
+    el.querySelector('.page-add').addEventListener('click', () => this.addPage());
   }
 
   render() {
@@ -1075,7 +1210,8 @@ export class TouchPanelApp {
     const outerW = this.panel.width + bezel * 2;
     const outerH = this.panel.height + bezel * 2;
     const availW = Math.max(100, this.stageEl.clientWidth - 32);
-    const availH = Math.max(100, this.stageEl.clientHeight - 48);
+    const tabsH = this.pageTabsEl ? this.pageTabsEl.offsetHeight + 8 : 0;
+    const availH = Math.max(100, this.stageEl.clientHeight - 48 - tabsH);
     const s = Math.min(availW / outerW, availH / outerH, 1.5);
     this.glassScale = s;
     this.bezelEl.style.transform = `scale(${s})`;
@@ -1221,7 +1357,8 @@ export class TouchPanelApp {
     this.surfaceEl.style.background = theme.glassBg || '';
     if (this.bezelEl) this.bezelEl.style.borderColor = theme.bezel || '';
 
-    this.panel.widgets.forEach(w => {
+    this.renderPageTabs();
+    this.panel.widgets.filter(w => this.isOnPage(w)).forEach(w => {
       const def = CONTROL_DEFINITIONS[w.type] || CONTROL_DEFINITIONS.button;
       const el = document.createElement('div');
       const isSelected = w.id === this.selectedWidgetId;
@@ -1287,7 +1424,9 @@ export class TouchPanelApp {
       .map(d => `<option value="${d.type}" ${sel === d.type ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
 
     this.panel.widgets.forEach((w, idx) => {
+      if (!this.isOnPage(w)) return;
       const tr = document.createElement('tr');
+      tr.dataset.wid = w.id;
       if (w.id === this.selectedWidgetId) {
         tr.style.background = 'var(--osc-bg-surface-hover)';
       }
@@ -1328,12 +1467,24 @@ export class TouchPanelApp {
               <option value="__browse">📚 Look library…</option>
             </select><span class="muted-cell">blank fields inherit the device theme</span></div>
           <div class="style-grid">${this.fieldGrid('style', idx, STYLE_FIELDS, own, this.themeStyle())}</div>
-          <div class="ed-head"><b>Behaviour</b></div>
+          <div class="ed-head"><b>Behaviour</b>
+            <label class="muted-cell">Page
+              <select class="cell-input" data-move-page="${idx}" style="width:auto;">
+                ${this.panel.pages.map(pg => `<option value="${esc(pg.id)}" ${pg.id === this.pageOf(w) ? 'selected' : ''}>${esc(pg.name)}</option>`).join('')}
+              </select></label></div>
           <div class="style-grid">${this.fieldGrid('behavior', idx, BEHAVIOR_FIELDS, w.behavior || {})}</div>
         </div></td>`;
         this.tableBody.appendChild(detail);
       }
     });
+
+    this.tableBody.querySelectorAll('[data-move-page]').forEach(sel => sel.addEventListener('change', (e) => {
+      const w = this.panel.widgets[Number(sel.dataset.movePage)];
+      if (!w) return;
+      w.page = e.target.value;
+      this.render();
+      this.changed();
+    }));
 
     this.tableBody.querySelectorAll('[data-caret]').forEach(btn => btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1393,9 +1544,8 @@ export class TouchPanelApp {
   }
 
   renderTableFieldsOnly() {
-    const rows = [...(this.tableBody?.children || [])].filter(r => !r.classList.contains('detail-row'));
-    this.panel.widgets.forEach((w, idx) => {
-      const row = rows[idx];
+    this.panel.widgets.forEach((w) => {
+      const row = this.tableBody?.querySelector(`tr[data-wid="${CSS.escape(w.id)}"]`);
       if (row) {
         const xInput = row.querySelector('[data-field="x"]');
         const yInput = row.querySelector('[data-field="y"]');

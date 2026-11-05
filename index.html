@@ -96,7 +96,23 @@
       color: var(--osc-text-muted);
     }
 
-    .canvas-stage { position: relative; }
+    .canvas-stage { position: relative; flex-direction: column; gap: 8px; }
+
+    /* Pages of the panel, as tabs across the top of the designer */
+    .page-tabs { display: flex; align-items: flex-end; gap: 2px; flex: none; max-width: 100%; overflow-x: auto; }
+    .page-tab {
+      display: flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer; user-select: none;
+      font-size: 11px; font-weight: 600; color: var(--osc-text-muted); white-space: nowrap;
+      background: var(--osc-bg-surface); border: 1px solid var(--osc-border-default); border-bottom: none;
+      border-radius: 6px 6px 0 0;
+    }
+    .page-tab.on { color: var(--osc-text-primary); background: var(--osc-bg-input); box-shadow: inset 0 2px 0 var(--osc-accent-primary); }
+    .page-tab .pt-n { font-family: monospace; font-size: 10px; color: var(--osc-text-muted); }
+    .page-tab .pt-x { color: var(--osc-text-muted); font-size: 10px; }
+    .page-tab .pt-x:hover { color: var(--osc-status-danger); }
+    .page-tab .pt-edit { width: 110px; font-size: 11px; background: var(--osc-bg-base, #111); color: var(--osc-text-primary); border: 1px solid var(--osc-accent-primary); }
+    .page-add { background: none; border: 1px dashed var(--osc-border-default); color: var(--osc-text-muted); border-radius: 6px 6px 0 0; padding: 4px 10px; cursor: pointer; }
+    .page-add:hover { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); }
 
     .touchpanel-surface {
       width: 1280px;
@@ -228,7 +244,13 @@
     .lib-row .n { font-family: monospace; color: var(--osc-text-muted); font-size: 10px; }
     .lib-row .bound { font-family: monospace; color: var(--osc-accent-primary); font-size: 10px; }
     .lib-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--osc-text-subtle, #555); flex: none; }
-    .lib-row .dot.online { background: var(--osc-status-success); }
+.lib-row .dot.online, .lib-group .dot.online { background: var(--osc-status-success); box-shadow: 0 0 6px var(--osc-status-success); }
+    .dot.recent { background: transparent; border: 2px solid var(--osc-status-success); box-sizing: border-box; }
+    .dot.unknown { background: #f59e0b; box-shadow: 0 0 5px #f59e0b; }
+    .dot.offline { background: #52525b; }
+    .lib-group .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 3px 0 6px; }
+    .lib-group.pinned { color: var(--osc-text-primary); cursor: default; }
+    .lib-row.bench.offline { opacity: 0.5; }
 
     .var-row { cursor: grab; padding-left: 18px; }
     .var-row.bound { box-shadow: inset 3px 0 0 var(--osc-accent-primary); }
@@ -607,6 +629,7 @@
       </aside>
 
       <main class="canvas-stage" id="canvas-stage">
+        <div class="page-tabs" id="page-tabs"></div>
         <div class="glass-fit" id="glass-fit">
           <div class="touchpanel-bezel" id="touchpanel-bezel">
             <div class="touchpanel-surface" id="touchpanel-surface"></div>
