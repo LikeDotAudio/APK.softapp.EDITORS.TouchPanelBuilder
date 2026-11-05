@@ -115,7 +115,7 @@ function fire(w, value, args = null) {
 function listen() {
   const link = state.bus;
   if (!link) return;
-  for (const [topic, widgets] of readbackTopics(state.panel.widgets)) {
+  for (const [topic, widgets] of readbackTopics(state.panel.widgets, state.write)) {
     link.subscribe(topic, (_t, text) => {
       for (const w of widgets) {
         w.value = readingText(text, w.behavior && w.behavior.unit);
@@ -230,7 +230,10 @@ function draw(w) {
   const el = state.els.get(w.id);
   const def = CONTROL_DEFINITIONS[w.type] || CONTROL_DEFINITIONS.readout;
   if (!el || !def) return;
-  el.innerHTML = def.render({ ...w, label: esc(w.label), subtitle: esc(w.subtitle), value: esc(w.value ?? ''), style: w.style || {} });
+  // A live panel never shows the builder's placeholder value: nothing read yet is "—".
+  const shown = w.value !== undefined && w.value !== null && w.value !== '' ? w.value : '—';
+  const behavior = { ...(w.behavior || {}), default: '' };
+  el.innerHTML = def.render({ ...w, behavior, label: esc(w.label), subtitle: esc(w.subtitle), value: esc(shown), style: w.style || {} });
 }
 
 function render() {

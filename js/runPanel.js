@@ -101,12 +101,23 @@ export function readingText(text, unit = '') {
   return unit && /^-?[\d.]+(e[-+]?\d+)?$/i.test(s) ? `${s} ${unit}` : s;
 }
 
+/** Where a control's answer arrives: its own readback topic, else the one KOMAND
+    publishes every reply on — `<box>/Reading/<command>` beside the box's Write. */
+export function readbackOf(widget, writeTopic = '') {
+  const own = String((widget && widget.address) || '');
+  if (own.startsWith('APK.audio/') && !/\/(Write|Control)$/.test(own) && !/[#+]/.test(own)) return own;
+  const h = handlerFor(widget, writeTopic);
+  const target = h && String(h.target || '');
+  if (!h || !/\/Write$/.test(target) || !/^(get|nab)$/i.test(String(h.komand_type || ''))) return '';
+  return `${target.slice(0, -'/Write'.length)}/Reading/${h.command}`;
+}
+
 /** The topics a running panel listens to: each control's readback, never a Write topic. */
-export function readbackTopics(widgets) {
+export function readbackTopics(widgets, writeTopic = '') {
   const map = new Map();
   for (const w of widgets || []) {
-    const t = String(w.address || '');
-    if (!t.startsWith('APK.audio/') || /\/(Write|Control)$/.test(t) || /[#+]/.test(t)) continue;
+    const t = readbackOf(w, writeTopic);
+    if (!t) continue;
     if (!map.has(t)) map.set(t, []);
     map.get(t).push(w);
   }

@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
+  controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
 } from '../js/runPanel.js';
 
 const gui = (path) => `APK.audio/Gui/${path.join('/')}`;
@@ -82,4 +82,13 @@ test('readbacks are listened to; Write topics and wildcards never', () => {
 test('the broker comes from config, with this page as {host}', () => {
   assert.deepEqual(brokerFor({ broker_urls: ['ws://{host}:9001'] }, 'bench.local'), ['ws://bench.local:9001']);
   assert.deepEqual(brokerFor({}, 'x'), []);
+});
+
+test('a read with no readback of its own listens where KOMAND answers: <box>/Reading/<command>', () => {
+  const nab = { address: WRITE, komand: { ...FRAME_HANDLER, komand_type: 'nab', command: 'Read_IDN' } };
+  assert.equal(readbackOf(nab), 'APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Reading/Read_IDN');
+  assert.equal(readbackOf({ address: WRITE, komand: FRAME_HANDLER }), '');   // a set has no answer to show
+  const own = 'APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Reading/settings/output';
+  assert.equal(readbackOf({ address: own, komand: FRAME_HANDLER }), own);
+  assert.deepEqual([...readbackTopics([nab]).keys()], ['APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Reading/Read_IDN']);
 });
