@@ -9,6 +9,7 @@ import {
 } from './controls.js';
 import { VINTAGE_LOOKS, loadLibraryLooks, groupLooks, lookFromField } from './lookLibrary.js';
 import { cloneControl, isHold, HOLD_MS } from './copyControl.js';
+import { paletteOf, grabBag, paletteFilter, deviceIO } from './palettes.js';
 import {
   ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType,
   humanLabel, bindingFor, matchesQuery,
@@ -26,6 +27,7 @@ export const SCREEN_PRESETS = [
 // library, is the limit: one Generator model alone carries over a thousand.
 const VAR_PAGE = 1500;
 const DRAG_MIME = 'application/x-apk-variable';
+const GRAB_MIME = 'application/x-apk-grabbag';
 
 // What only the device as a whole has: the glass and the bezel around it.
 const THEME_FIELDS = [
@@ -80,6 +82,7 @@ export class TouchPanelApp {
     this.varQuery = '';
     this.devQuery = '';
     this.collapsed = new Set(['__offline']);
+    this.collapsedSub = new Set();     // variable sub-categories folded shut
     this.varLimit = VAR_PAGE;
     this.wireFrame = 0;
 
@@ -528,6 +531,12 @@ export class TouchPanelApp {
 
     // Bare glass accepts a dropped variable: make a control for it.
     this.surfaceEl.addEventListener('dragover', (e) => {
+      if (e.dataTransfer.types.includes(GRAB_MIME)) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        this.markDropTarget(this.surfaceEl);
+        return;
+      }
       if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'link';
@@ -537,6 +546,13 @@ export class TouchPanelApp {
       if (!this.surfaceEl.contains(e.relatedTarget)) this.markDropTarget(null);
     });
     this.surfaceEl.addEventListener('drop', (e) => {
+      const grab = e.dataTransfer.getData(GRAB_MIME);
+      if (grab) {
+        e.preventDefault();
+        this.markDropTarget(null);
+        try { this.dropGrabBag(JSON.parse(grab)); } catch (_) {}
+        return;
+      }
       const vid = e.dataTransfer.getData(DRAG_MIME);
       this.markDropTarget(null);
       if (!vid) return;
@@ -674,11 +690,12 @@ export class TouchPanelApp {
       const i = lib.bench.indexOf(d);
       const k = d.known ? modelKey(d.family, d.model) : '';
       const label = [d.icon, d.make, d.model].filter(Boolean).join(' ') || d.name;
-      return `<div class="lib-row bench ${d.liveness} ${k && sel.has(k) ? 'on' : ''}" ${k ? `data-mkey="${esc(k)}"` : ''} data-bench="${i}"
+      return `<div class="lib-row bench ${d.liveness} ${k && sel.has(k) ? 'on' : ''}" ${k ? `data-mkey="${esc(k)}" draggable="true" data-grab="${esc(k)}"` : ''} data-bench="${i}"
           title="${esc(d.name)} · ${esc(d.liveness)} · ${esc(agoText(d.lastSeen, nowSecs))}${d.address ? '\n' + esc(d.address) : ''}">
         <span class="dot ${d.liveness}"></span>
         <span class="main"><span>${esc(label)}</span><span class="sub">${esc(d.name)} · ${esc(d.liveness === 'unknown' ? 'status unknown' : agoText(d.lastSeen, nowSecs))}</span></span>
         ${k && bound.get(k) ? `<span class="bound">${bound.get(k)}⇄</span>` : ''}
+        ${(d.panel?.prefix) ? `<button class="verb-chip gui" data-gui="${i}" title="Open its own panel in the OS">▣</button>` : ''}
         <span class="n">${d.known ? d.variables : '—'}</span></div>`;
     };
     const live = benchRows.filter(d => d.liveness !== 'offline');
@@ -705,7 +722,7 @@ export class TouchPanelApp {
         <button class="verb-chip" data-family-all="${esc(fam.family)}" title="List all ${models.length} models">all</button></div>`);
       if (!open) return;
       models.forEach(m => {
-        parts.push(`<div class="lib-row ${sel.has(m.key) ? 'on' : ''}" data-mkey="${esc(m.key)}">
+        parts.push(`<div class="lib-row ${sel.has(m.key) ? 'on' : ''}" data-mkey="${esc(m.key)}" draggable="true" data-grab="${esc(m.key)}" title="Click to list its variables · drag onto the glass to bring its whole palette">
           <span class="main"><span>${esc(m.model)}</span><span class="sub">${esc(m.manufacturer)}${m.notes ? ' · ' + esc(m.notes) : ''}</span></span>
           ${bound.get(m.key) ? `<span class="bound" title="controls wired to it">${bound.get(m.key)}⇄</span>` : ''}
           <span class="n" title="controllable variables">${m.variables}</span></div>`);
@@ -727,12 +744,91 @@ export class TouchPanelApp {
       if (this.collapsed.has(k)) this.collapsed.delete(k); else this.collapsed.add(k);
       this.renderDevices();
     }));
+    // Drag a device onto the glass: its whole palette comes with it.
+    this.devList.querySelectorAll('[data-grab]').forEach(r => r.addEventListener('dragstart', (e) => {
+      const device = r.dataset.bench !== undefined ? lib.bench[Number(r.dataset.bench)] : null;
+      if (device) this.deviceFor.set(r.dataset.grab, device);
+      e.dataTransfer.setData(GRAB_MIME, JSON.stringify({ key: r.dataset.grab }));
+      e.dataTransfer.effectAllowed = 'copy';
+    }));
+    this.devList.querySelectorAll('[data-gui]').forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const d = lib.bench[Number(b.dataset.gui)];
+      if (!this.openDefaultGui(d)) {
+        const tag = document.getElementById('block-tag');
+        if (tag) tag.textContent = 'OPEN THE DESIGNER FROM THE OS TO OPEN A DEVICE PANEL';
+      }
+    }));
     this.devList.querySelectorAll('.lib-row').forEach(r => r.addEventListener('click', (e) => {
       const device = r.dataset.bench !== undefined ? lib.bench[Number(r.dataset.bench)] : null;
       if (!r.dataset.mkey) return; // a box the instrument library has no api for
       this.selectModel(r.dataset.mkey, { additive: e.shiftKey || e.ctrlKey || e.metaKey, device });
     }));
     this.scheduleWires();
+  }
+
+  varRowHtml(v, boundIds) {
+    const extra = [v.subsystem, v.scpi, v.values ? v.values.slice(0, 6).join('|') : v.kind !== 'none' ? v.kind : '']
+      .filter(Boolean).join(' · ');
+    const verb = (VERB_LABEL[v.verb] || v.verb).toUpperCase();
+    return `<div class="lib-row var-row ${boundIds.has(v.id) ? 'bound' : ''}" draggable="true" data-vid="${esc(v.id)}"
+        title="${esc(v.description)}\n${esc(v.scpi)}${v.topic ? '\n' + esc(v.topic) : ''}">
+      <span class="port"></span>
+      <span class="verb verb-${esc(v.verb)}">${esc(verb)}</span>
+      <span class="main"><span>${esc(v.command)}</span><span class="sub">${esc(extra)}</span></span>
+      <button class="add" title="Wire to the selected control (or make one)">＋</button></div>`;
+  }
+
+  // GRAB BAGS — a whole device, verb or sub-category dropped as controls. They
+  // go onto new pages (named after the device and the bag) laid out by
+  // devicePanel.panelFromVariables, so nothing already on the glass moves.
+  grabSpec(el) {
+    return { key: el.dataset.grab, verb: el.dataset.grabVerb || '', sub: el.dataset.grabSub || '' };
+  }
+
+  async dropGrabBag({ key, verb = '', sub = '' }) {
+    let vars = this.varsByModel.get(key);
+    if (!Array.isArray(vars)) {
+      try { vars = await this.library.variables(key); } catch (_) { return; }
+      this.varsByModel.set(key, vars);
+      vars.forEach(v => this.varIndex.set(v.id, v));
+    }
+    const pick = verb || sub ? grabBag(vars, { verb: verb || undefined, subsystem: sub || undefined }) : paletteFilter(vars);
+    if (!pick.length) return;
+    const m = this.library.models.get(key);
+    const device = this.deviceFor.get(key) || null;
+    const built = panelFromVariables(pick, {
+      model: m?.model || key.split('/')[1] || '', family: m?.family || key.split('/')[0] || '',
+      device, width: this.panel.width, height: this.panel.height,
+    });
+    if (!built || !built.widgets?.length) return;
+    const title = [m?.model || key, sub || (verb ? VERB_LABEL[verb] || verb : '')].filter(Boolean).join(' · ');
+    const stamp = Date.now();
+    const pageId = new Map();
+    let n = this.panel.pages.length;
+    for (const pg of built.pages || []) {
+      while (this.panel.pages.some(p => p.id === `p${n}`)) n += 1;
+      const id = `p${n}`;
+      this.panel.pages.push({ id, name: built.pages.length > 1 ? `${title} · ${pg.name}` : title });
+      pageId.set(pg.id, id);
+    }
+    const first = [...pageId.values()][0] || this.currentPage;
+    built.widgets.forEach((w, i) => {
+      this.panel.widgets.push({ ...w, id: `w_${stamp}_${i}`, page: pageId.get(w.page) || first });
+    });
+    this.setPage(first);
+    this.renderVariables();
+    this.changed();
+  }
+
+  // A device's own default panel (its retained Gui/Panels panel), opened in
+  // the OS shell the way DATABASE.server.BIM's picker does it.
+  openDefaultGui(d) {
+    const prefix = d?.panel?.prefix || d?.prefix;
+    const shell = window.top !== window ? window.top : (window.opener || null);
+    if (!prefix || !shell) return false;
+    shell.postMessage({ apkos: 'device', action: 'open-console', prefix, label: d.name || d.model }, '*');
+    return true;
   }
 
   renderVariables(loading = false) {
@@ -760,19 +856,31 @@ export class TouchPanelApp {
       total += vars.length;
       const rows = vars.filter(v => this.verbFilter.has(v.verb) && matchesQuery(v, this.varQuery));
       matched += rows.length;
+      const io = deviceIO(vars);
       parts.push(`<div class="lib-group" data-mkey="${esc(key)}"><span class="grow">${head}</span>
-        <span>${rows.length}${rows.length !== vars.length ? ' / ' + vars.length : ''}</span></div>`);
-      for (const v of rows) {
-        if (shown >= this.varLimit) { truncated = true; break; }
-        shown += 1;
-        const extra = [v.subsystem, v.scpi, v.values ? v.values.slice(0, 6).join('|') : v.kind !== 'none' ? v.kind : '']
-          .filter(Boolean).join(' · ');
-        parts.push(`<div class="lib-row var-row ${boundIds.has(v.id) ? 'bound' : ''}" draggable="true" data-vid="${esc(v.id)}"
-            title="${esc(v.description)}\n${esc(v.scpi)}${v.topic ? '\n' + esc(v.topic) : ''}">
-          <span class="port"></span>
-          <span class="verb verb-${v.verb}">${VERB_LABEL[v.verb].toUpperCase()}</span>
-          <span class="main"><span>${esc(v.command)}</span><span class="sub">${esc(extra)}</span></span>
-          <button class="add" title="Wire to the selected control (or make one)">＋</button></div>`);
+        <span title="its own ins and outs">${esc(io.text)}</span>
+        <button class="verb-chip grab" data-grab="${esc(key)}" title="Grab bag: the device's whole palette onto new pages">⊞ all</button></div>`);
+      // Set / Do / Rig / Get, each split into its sub-categories. Every level is
+      // a grab bag (⊞): click it, or drag it onto the glass, to bring all of it.
+      for (const vb of paletteOf(rows, { keepEmpty: false }).verbs) {
+        parts.push(`<div class="lib-sub verb-head verb-${esc(vb.verb)}" draggable="true" data-grab="${esc(key)}" data-grab-verb="${esc(vb.verb)}">
+          <span class="grow">${esc(vb.label)}</span><span>${vb.count}</span>
+          <button class="verb-chip grab" title="Grab bag: every ${esc(vb.label)} command">⊞</button></div>`);
+        for (const sc of vb.subcategories) {
+          const ck = `${key}|${vb.verb}|${sc.key}`;
+          const open = !this.collapsedSub.has(ck) || !!this.varQuery;
+          parts.push(`<div class="lib-sub sub-head" draggable="true" data-sub="${esc(ck)}" data-grab="${esc(key)}" data-grab-verb="${esc(vb.verb)}" data-grab-sub="${esc(sc.key)}">
+            <span>${open ? '▾' : '▸'}</span><span class="grow">${esc(sc.label)}</span><span>${sc.count}</span>
+            <button class="verb-chip grab" title="Grab bag: ${esc(sc.label)}">⊞</button></div>`);
+          if (!open) continue;
+          for (const v of sc.variables) {
+            if (shown >= this.varLimit) { truncated = true; break; }
+            shown += 1;
+            parts.push(this.varRowHtml(v, boundIds));
+          }
+          if (truncated) break;
+        }
+        if (truncated) break;
       }
       if (truncated) break;
     }
@@ -792,6 +900,23 @@ export class TouchPanelApp {
       this.varLimit += VAR_PAGE;
       this.renderVariables();
     });
+
+    this.varList.querySelectorAll('[data-grab]').forEach(el => {
+      const btn = el.matches('button') ? el : el.querySelector('button.grab');
+      btn?.addEventListener('click', (e) => { e.stopPropagation(); this.dropGrabBag(this.grabSpec(el)); });
+      if (el.draggable) {
+        el.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData(GRAB_MIME, JSON.stringify(this.grabSpec(el)));
+          e.dataTransfer.effectAllowed = 'copy';
+        });
+      }
+    });
+    this.varList.querySelectorAll('[data-sub]').forEach(el => el.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      const k = el.dataset.sub;
+      if (this.collapsedSub.has(k)) this.collapsedSub.delete(k); else this.collapsedSub.add(k);
+      this.renderVariables();
+    }));
 
     this.varList.querySelectorAll('.var-row').forEach(row => {
       const v = this.varIndex.get(row.dataset.vid);

@@ -274,6 +274,15 @@
     .lib-row.bench.offline { opacity: 0.5; }
 
     .var-row { cursor: grab; padding-left: 18px; }
+    .lib-sub {
+      display: flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 10px; cursor: pointer; user-select: none;
+      border-bottom: 1px solid var(--osc-border-muted, var(--osc-border-default)); color: var(--osc-text-muted);
+    }
+    .lib-sub .grow { flex: 1; }
+    .lib-sub.verb-head { font-weight: 800; text-transform: uppercase; background: var(--osc-bg-surface-hover); cursor: grab; }
+    .lib-sub.sub-head { padding-left: 16px; font-weight: 600; cursor: pointer; }
+    .lib-sub .grab, .lib-group .grab { padding: 0 6px; cursor: copy; }
+    .lib-row .gui { padding: 0 5px; }
     .var-row.bound { box-shadow: inset 3px 0 0 var(--osc-accent-primary); }
     .var-row.flash { background: var(--osc-bg-input); }
     .var-row .port {
