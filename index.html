@@ -3,13 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Touch Panel & Surface Designer · Standalone Block Editor</title>
+  <title>Touch Panel Designer</title>
   <link rel="stylesheet" href="./vendor/apk-contracts/apk-tokens.css">
   <link rel="stylesheet" href="./css/theme.css">
+  <link rel="stylesheet" href="./vendor/apk-table/apk-table.css">
   <style>
+    .discovered-panel {
+      background: var(--osc-bg-surface);
+      border-bottom: 1px solid var(--osc-border-default);
+      padding: 8px 14px;
+      max-height: 40vh;
+      overflow: auto;
+    }
+    .discovered-status { font-size: 11px; margin-bottom: 6px; }
     .touchpanel-container {
       display: grid;
-      grid-template-rows: auto 1fr 240px;
+      grid-template-rows: auto 1fr 220px;
       height: calc(100vh - 40px);
       overflow: hidden;
     }
@@ -41,7 +50,12 @@
       display: flex;
       align-items: center;
       gap: 6px;
+      overflow-x: auto;
+      max-width: 48vw;
+      padding-bottom: 2px;
     }
+
+    .palette-container .btn, .top-toolbar label, .top-toolbar .btn { white-space: nowrap; flex: none; }
 
     .canvas-stage {
       background: radial-gradient(circle at 50% 50%, #1e1e24 0%, #121212 100%);
@@ -61,13 +75,390 @@
       overflow: hidden;
     }
 
+    .glass-fit {
+      position: relative;
+      flex: none;
+    }
+
+    .glass-fit .touchpanel-bezel {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+    }
+
+    .glass-scale {
+      position: absolute;
+      bottom: 6px;
+      right: 10px;
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--osc-text-muted);
+    }
+
+    .canvas-stage { position: relative; }
+
     .touchpanel-surface {
-      width: 720px;
-      height: 450px;
+      width: 1280px;
+      height: 800px;
       background: #121212;
       position: relative;
       overflow: hidden;
     }
+
+
+    /* ---- Workbench: devices | glass | variables, wires over all three ---- */
+    .workbench {
+      position: relative;
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 400px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .lib-col {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--osc-bg-surface);
+      border-right: 1px solid var(--osc-border-default);
+    }
+
+    .lib-col.right {
+      border-right: none;
+      border-left: 1px solid var(--osc-border-default);
+    }
+
+    .lib-head {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--osc-border-default);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--osc-bg-surface-hover);
+    }
+
+    .lib-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--osc-text-muted);
+    }
+
+    .lib-title .count {
+      font-size: 10px;
+      white-space: nowrap;
+      font-weight: 600;
+      color: var(--osc-accent-primary);
+      text-transform: none;
+      font-family: monospace;
+    }
+
+    .lib-search {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .verb-filters {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .verb-chip {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--osc-border-default);
+      color: var(--osc-text-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .verb-chip.on {
+      color: var(--osc-text-primary);
+      border-color: var(--osc-accent-primary);
+      background: var(--osc-bg-input);
+    }
+
+    .lib-list {
+      flex: 1;
+      overflow: auto;
+      font-size: 11px;
+    }
+
+    .lib-group {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--osc-bg-input);
+      border-bottom: 1px solid var(--osc-border-default);
+      color: var(--osc-text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .lib-group .grow { flex: 1; }
+
+    .lib-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-bottom: 1px solid var(--osc-border-muted, var(--osc-border-default));
+      cursor: pointer;
+      color: var(--osc-text-primary);
+    }
+
+    .lib-row:hover { background: var(--osc-bg-surface-hover); }
+    .lib-row.on { background: var(--osc-bg-input); box-shadow: inset 3px 0 0 var(--osc-accent-primary); }
+    .lib-row .sub { color: var(--osc-text-muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lib-row .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .lib-row .n { font-family: monospace; color: var(--osc-text-muted); font-size: 10px; }
+    .lib-row .bound { font-family: monospace; color: var(--osc-accent-primary); font-size: 10px; }
+    .lib-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--osc-text-subtle, #555); flex: none; }
+    .lib-row .dot.online { background: var(--osc-status-success); }
+
+    .var-row { cursor: grab; padding-left: 18px; }
+    .var-row.bound { box-shadow: inset 3px 0 0 var(--osc-accent-primary); }
+    .var-row.flash { background: var(--osc-bg-input); }
+    .var-row .port {
+      position: absolute;
+      left: 5px;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      margin-top: -4px;
+      border-radius: 50%;
+      border: 1px solid var(--osc-text-muted);
+      background: transparent;
+    }
+    .var-row.bound .port { background: var(--osc-accent-primary); border-color: var(--osc-accent-primary); }
+    .var-row .verb {
+      flex: none;
+      width: 30px;
+      text-align: center;
+      font-size: 9px;
+      font-weight: 700;
+      border-radius: 3px;
+      padding: 1px 0;
+      border: 1px solid currentColor;
+    }
+    .verb-set { color: #38bdf8; }
+    .verb-do { color: #f59e0b; }
+    .verb-rig { color: #a78bfa; }
+    .verb-get { color: #34d399; }
+    .var-row .add {
+      flex: none;
+      border: 1px solid var(--osc-border-default);
+      background: transparent;
+      color: var(--osc-text-muted);
+      border-radius: 3px;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+    .var-row .add:hover { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); }
+
+    .lib-more {
+      padding: 10px;
+      text-align: center;
+      color: var(--osc-text-muted);
+      font-size: 11px;
+    }
+
+    .lib-empty {
+      padding: 16px 12px;
+      color: var(--osc-text-muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .lib-foot {
+      padding: 6px 10px;
+      border-top: 1px solid var(--osc-border-default);
+      font-size: 10px;
+      color: var(--osc-text-muted);
+    }
+
+    .wire-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+      overflow: visible;
+    }
+
+    .wire-layer path.wire {
+      fill: none;
+      stroke: var(--osc-accent-primary);
+      stroke-width: 1.6;
+      opacity: 0.75;
+    }
+
+    .wire-layer path.wire.sel { stroke-width: 2.6; opacity: 1; }
+    .wire-layer path.wire.off { stroke-dasharray: 4 4; opacity: 0.45; }
+    .wire-layer path.wire.temp { stroke-dasharray: 6 4; opacity: 1; }
+    .wire-layer path.hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 12;
+      pointer-events: stroke;
+      cursor: pointer;
+    }
+
+    .touch-widget .w-port {
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      margin-top: -6px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--osc-bg-base, #111);
+      border: 2px solid var(--osc-accent-primary);
+      cursor: crosshair;
+      z-index: 3;
+    }
+
+    .touch-widget .w-port.bound { background: var(--osc-accent-primary); }
+
+    .touch-widget .w-badge {
+      position: absolute;
+      top: -8px;
+      left: -6px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--osc-accent-primary);
+      color: #000;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 16px;
+      text-align: center;
+      z-index: 3;
+    }
+
+    .touch-widget.drop-target { outline: 2px dashed var(--osc-status-success) !important; }
+    .touchpanel-surface.drop-target { box-shadow: inset 0 0 0 2px var(--osc-status-success); }
+
+    .bind-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin: 1px 4px 1px 0;
+      padding: 1px 6px;
+      border-radius: 9px;
+      background: var(--osc-bg-input);
+      border: 1px solid var(--osc-border-default);
+      font-size: 10px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .bind-chip b { font-weight: 600; color: var(--osc-text-muted); }
+    .bind-chip .x { color: var(--osc-text-muted); cursor: pointer; }
+    .bind-chip .x:hover { color: var(--osc-status-danger); }
+    .muted-cell { color: var(--osc-text-muted); font-size: 10px; }
+
+    .look-lib {
+      position: fixed;
+      inset: 48px 16px 16px 16px;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      background: var(--osc-bg-surface);
+      border: 1px solid var(--osc-border-default);
+      border-radius: 8px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.75);
+    }
+    .look-lib[hidden] { display: none; }
+    .look-lib-head {
+      display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+      border-bottom: 1px solid var(--osc-border-default); font-size: 12px; flex-wrap: wrap;
+    }
+    .look-lib-head .count { font-family: monospace; color: var(--osc-accent-primary); font-size: 11px; }
+    .look-target { font-size: 11px; color: var(--osc-text-muted); display: flex; gap: 8px; align-items: center; }
+    .look-lib-body { flex: 1; display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
+    .look-lib-body .lib-list { border-right: 1px solid var(--osc-border-default); }
+    .look-grid {
+      overflow: auto; padding: 12px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start;
+    }
+    .look-card {
+      border: 1px solid var(--osc-border-default); border-radius: 6px; padding: 6px; cursor: pointer;
+      background: var(--osc-bg-input); display: flex; flex-direction: column; gap: 4px;
+    }
+    .look-card:hover { border-color: var(--osc-accent-primary); }
+    .look-prev { height: 96px; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 6px; overflow: hidden; }
+    .look-name { font-size: 11px; font-weight: 600; color: var(--osc-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .look-fam { font-size: 10px; color: var(--osc-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .look-sw { display: flex; gap: 3px; }
+    .look-sw i { width: 14px; height: 10px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.15); }
+
+    .data-grid-panel { position: relative; }
+
+    .data-grid-panel.popped {
+      position: fixed;
+      inset: 48px 16px 16px 16px;
+      z-index: 50;
+      border: 1px solid var(--osc-border-default);
+      border-radius: 8px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.75);
+    }
+
+    .grid-resize {
+      position: absolute;
+      top: -3px;
+      left: 0;
+      right: 0;
+      height: 6px;
+      cursor: ns-resize;
+      z-index: 3;
+    }
+
+    .data-grid-panel.popped .grid-resize { display: none; }
+
+    .theme-editor { display: none; padding: 10px 12px; border-bottom: 1px solid var(--osc-border-default); }
+    .data-grid-panel.popped .theme-editor { display: block; }
+
+    .caret {
+      background: none;
+      border: none;
+      color: var(--osc-text-muted);
+      cursor: pointer;
+      padding: 0 4px 0 0;
+      font-size: 11px;
+    }
+
+    tr.detail-row > td { background: var(--osc-bg-base, #111); }
+    .detail { padding: 8px 4px 12px; }
+    .ed-head { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 11px; text-transform: uppercase; color: var(--osc-text-primary); }
+    .style-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 6px 12px;
+    }
+    .fld { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--osc-text-muted); }
+    .fld-color { display: flex; gap: 4px; align-items: center; }
+    .fld-color input[type=color] { width: 26px; height: 22px; padding: 0; border: 1px solid var(--osc-border-default); background: none; flex: none; }
+    .fld-range { display: flex; gap: 6px; align-items: center; }
+    .fld-range input { flex: 1; }
+    .fld .cell-input { border-color: var(--osc-border-default); }
 
     .data-grid-panel {
       background: var(--osc-bg-surface);
@@ -167,6 +558,11 @@
     </div>
   </header>
 
+  <section class="discovered-panel" id="discovered-panel" hidden>
+    <div class="discovered-status apk-state-text" id="discovered-status" data-apk-state="kinda">Not asked yet.</div>
+    <div id="discovered-table" class="apk-table-host"></div>
+  </section>
+
   <div class="touchpanel-container">
     <div class="top-toolbar">
       <div style="display:flex; align-items:center; gap:16px;">
@@ -178,6 +574,12 @@
           <label for="select-screen-preset">Hardware Glass:</label>
           <select id="select-screen-preset" class="input" style="width:220px;"></select>
         </div>
+        <div class="form-group-inline">
+          <label for="select-theme">Device Theme:</label>
+          <select id="select-theme" class="input" style="width:150px;"></select>
+          <button class="btn btn-secondary btn-sm" id="btn-theme" title="Edit the device theme">🎨</button>
+          <button class="btn btn-secondary btn-sm" id="btn-looks" title="Vintage consoles, synths, tape machines and every knob, fader, LTP, MDP, CMDP, meter and button in the widget library">📚 Looks</button>
+        </div>
       </div>
 
       <div style="display:flex; align-items:center; gap:8px;">
@@ -186,27 +588,63 @@
       </div>
     </div>
 
-    <main class="canvas-stage">
-      <div class="touchpanel-bezel">
-        <div class="touchpanel-surface" id="touchpanel-surface"></div>
-      </div>
-    </main>
+    <div class="workbench" id="workbench">
+      <aside class="lib-col left">
+        <div class="lib-head">
+          <div class="lib-title"><span>Control Devices</span><span class="count" id="dev-count">loading…</span></div>
+          <input type="search" class="input lib-search" id="dev-search" placeholder="Filter devices (model, maker, family)…">
+        </div>
+        <div class="lib-list" id="dev-list"></div>
+        <div class="lib-foot">Click a device to list its variables · Shift-click adds to the list</div>
+      </aside>
 
-    <section class="data-grid-panel">
+      <main class="canvas-stage" id="canvas-stage">
+        <div class="glass-fit" id="glass-fit">
+          <div class="touchpanel-bezel" id="touchpanel-bezel">
+            <div class="touchpanel-surface" id="touchpanel-surface"></div>
+          </div>
+        </div>
+        <div class="glass-scale" id="glass-scale"></div>
+      </main>
+
+      <aside class="lib-col right">
+        <div class="lib-head">
+          <div class="lib-title"><span>Controllable Variables</span><span class="count" id="var-count"></span></div>
+          <input type="search" class="input lib-search" id="var-search" placeholder="Filter variables (command, SCPI, subsystem)…">
+          <div class="verb-filters" id="verb-filters"></div>
+        </div>
+        <div class="lib-list" id="var-list"></div>
+        <div class="lib-foot">Drag a variable onto a control (or onto bare glass to make one) · drag a control's ● port onto a variable · ＋ binds to the selected control</div>
+      </aside>
+
+      <svg class="wire-layer" id="wire-layer"></svg>
+    </div>
+
+    <section class="data-grid-panel" id="data-grid-panel">
+      <div class="grid-resize" id="grid-resize" title="Drag to resize"></div>
       <div class="data-grid-header">
         <span style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--osc-text-muted);">
           Widgets & OSC / Control Address Schedule (Live Editable)
         </span>
-        <button class="btn btn-primary btn-sm" id="btn-add-widget">+ Add Widget</button>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-secondary btn-sm" id="btn-expand-all" title="Open every control's style & behaviour">▾ Styles</button>
+          <button class="btn btn-secondary btn-sm" id="btn-popout" title="Pop the schedule out over the editor (Esc to dock)">⤢ Pop Out</button>
+          <button class="btn btn-primary btn-sm" id="btn-add-widget">+ Add Widget</button>
+        </div>
       </div>
       <div class="data-table-container">
-        <table class="widget-table">
-          <thead>
+        <div class="theme-editor" id="theme-editor"></div>
+        <!-- THE ONE TABLE: an APKTable markup host, upgraded on load (apk-table.js scan) into
+             table.widget-table with tbody#widget-table-body, registered as 'touchpanel-widgets'. -->
+        <div class="apk-table-host" data-apk-table-host="touchpanel-widgets"
+             data-apk-opts='{"id":"touchpanel-widgets","className":"widget-table","bodyId":"widget-table-body","sortable":false}'>
+          <template data-apk-part="head">
             <tr>
               <th class="col-idx text-center">#</th>
               <th>Widget Label</th>
               <th style="width:110px;">Type</th>
-              <th>OSC / MIDI Address</th>
+              <th style="width:22%;">OSC / MIDI Address</th>
+              <th>Bound Variables</th>
               <th style="width:60px;" class="text-center">Ch</th>
               <th style="width:55px;" class="text-center">X</th>
               <th style="width:55px;" class="text-center">Y</th>
@@ -214,11 +652,34 @@
               <th style="width:55px;" class="text-center">H</th>
               <th class="col-actions">Act</th>
             </tr>
-          </thead>
-          <tbody id="widget-table-body"></tbody>
-        </table>
+          </template>
+        </div>
       </div>
     </section>
+  </div>
+
+  <!-- The one softapp client (ROAD-3485): contracts, bus, CAD bridge, table. Classic scripts, before the module. -->
+  <script src="./vendor/apk-contracts/apk-contracts.global.js"></script>
+  <script src="/FrontEnd/shared/apk-bus.js"></script>
+  <script src="./vendor/apk-softapp/apk-softapp.js"></script>
+  <script src="./vendor/apk-table/apk-table.js"></script>
+  <div class="look-lib" id="look-lib" hidden>
+    <div class="look-lib-head">
+      <b>📚 Look Library</b>
+      <span class="count" id="look-count"></span>
+      <input type="search" class="input" id="look-search" placeholder="Search every look (name, family, era, widget)…" style="flex:1; max-width:420px;">
+      <span class="look-target">Apply to:
+        <label><input type="radio" name="look-target" value="theme" checked> Device theme</label>
+        <label><input type="radio" name="look-target" value="control"> Selected control</label>
+        <label><input type="radio" name="look-target" value="new"> New control</label>
+      </span>
+      <span class="muted-cell" id="look-lib-note"></span>
+      <button class="btn btn-secondary btn-sm" id="look-close">✕ Close</button>
+    </div>
+    <div class="look-lib-body">
+      <aside class="lib-list" id="look-groups"></aside>
+      <div class="look-grid" id="look-grid"></div>
+    </div>
   </div>
 
   <script type="module" src="./js/touchPanelApp.js"></script>
