@@ -8,7 +8,7 @@
   "panel_wait_ms": 4000,
   "_about_panel_wait_ms": "How long the builder, opened from a device's link, waits for that device's retained Gui/Panels/<key> before starting from its api.json instead. Retained panels arrive on connect, so this only runs out when the device presents none.",
   "broker_urls": [
-    "ws://{host}:9001"
+    "{ws_origin}/mqtt"
   ],
-  "_about_broker_urls": "The broker run.html dials when it is opened outside the OS shell (the portal has no /mqtt). {host} is the page's own host. The OS shell's broker wins when there is one."
+  "_about_broker_urls": "The broker run.html and the builder dial when opened outside the OS shell. {ws_origin} is the page's own origin as ws:/wss: — Storage-Portal :8080 proxies /mqtt to Broker-Mosquitto:9001 since 2026-11-04, so one forwarded port is enough. {host} (the page's host) is still understood, e.g. ws://{host}:9001 for a page served elsewhere. The OS shell's broker wins when there is one."
 }

@@ -10,7 +10,7 @@
    each readout shows the instrument's readback as it arrives.
 
    The bus: inside the OS shell the shell's own broker; a page on the portal has
-   no /mqtt of its own, so the broker comes from config/discovered.json
+   the broker comes from config/discovered.json
    `broker_urls` — a tunable, never a port written here. No bus: the panel is
    drawn, every control says it cannot send, and nothing is pretended. */
 
@@ -63,8 +63,8 @@ async function presented(want) {
 
 /** The box itself, as the OS API finds it by protocol + resource: its Write topic. */
 async function findBox(want) {
-  if (!want.resource) return null;
-  const q = new URLSearchParams({ protocol: want.protocol || 'visa', resource: want.resource, model: want.model });
+  if (!want.resource && !want.serial) return null;
+  const q = new URLSearchParams({ protocol: want.protocol || 'visa', resource: want.resource, model: want.model || '', serial: want.serial || '' });
   try {
     const r = await fetch(`/api/instrument/status?${q}`, { cache: 'no-store' });
     return r.ok ? await r.json() : null;
@@ -91,7 +91,7 @@ async function connectBus() {
   try { shell = window.parent !== window && !!(window.parent.OS && window.parent.OS.brokerUrl); } catch (_) { /* other origin */ }
   if (shell) return S.bus();
   const cfg = await loadDiscoveredConfig();
-  const urls = brokerFor(cfg, location.hostname);
+  const urls = brokerFor(cfg, location);
   return S.bus(urls.length ? { brokerUrl: urls[0] } : undefined);
 }
 
@@ -304,10 +304,16 @@ async function start() {
   $('run-name').textContent = panel.name.replace(/ TOUCH PANEL$/, '');
   document.title = `${$('run-name').textContent} · Touch Panel`;
   $('run-from').textContent = `from ${panel.placement}`;
-  if (box && box.found) pill('box-pill', `ON THE BUS · ${box.verified_age_s ?? '?'} s`, 'good');
+  const f = (box && box.fields) || {};
+  const unreachable = String(f.reachable) === '0' || f.status === 'stale';
+  if (box && box.found && unreachable) pill('box-pill', `UNREACHABLE · last seen ${box.verified_age_s ?? '?'} s ago${f.error ? ' · ' + f.error : ''}`, 'dead');
+  else if (box && box.found) pill('box-pill', `ON THE BUS · ${box.verified_age_s ?? '?'} s`, 'good');
   else if (state.write) pill('box-pill', 'PRESENTED, NOT VERIFIED', 'kinda');
   else pill('box-pill', 'BOX NOT FOUND — CANNOT SEND', 'dead');
-  const busState = () => pill('bus-pill', bus && bus.connected ? 'BUS' : 'NO BUS', bus && bus.connected ? 'good' : 'dead');
+  const busState = () => {
+    pill('bus-pill', bus && bus.connected ? 'BUS' : 'NO BUS', bus && bus.connected ? 'good' : 'dead');
+    $('bus-pill').title = bus ? `broker ${bus.url || '(the shell\'s)'}` : 'no bus client on this page';
+  };
   busState();
   setInterval(busState, 2000);
   render();

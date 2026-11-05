@@ -15,6 +15,7 @@
 
    Pure helpers plus two small bus calls; the tests feed it a fake link. */
 
+import { brokerFor } from './runPanel.js';
 /** The identity a saved panel is filed under: serial, else the presented key. Never an IP. */
 export function savedIdentity(panel, link) {
   const real = (s) => { const v = String(s ?? '').trim(); return v && !/^0+$/.test(v) ? v : ''; };
@@ -75,8 +76,6 @@ export async function benchBus(S, cfg, win = globalThis.window) {
   let shell = false;
   try { shell = win.parent !== win && !!(win.parent.OS && win.parent.OS.brokerUrl); } catch (_) { /* other origin */ }
   if (shell) return S.bus();
-  const host = (win && win.location && win.location.hostname) || '127.0.0.1';
-  const urls = (Array.isArray(cfg && cfg.broker_urls) ? cfg.broker_urls : [])
-    .map(u => String(u || '').replace('{host}', host)).filter(Boolean);
+  const urls = brokerFor(cfg, (win && win.location) || '127.0.0.1');
   return S.bus(urls.length ? { brokerUrl: urls[0] } : undefined);
 }

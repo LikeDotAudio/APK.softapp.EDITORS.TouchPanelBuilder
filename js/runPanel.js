@@ -124,8 +124,13 @@ export function readbackTopics(widgets, writeTopic = '') {
   return map;
 }
 
-/** The broker a page outside the OS shell dials: config `broker_urls`, `{host}` = this page's host. */
-export function brokerFor(cfg, hostname) {
+/** The broker a page outside the OS shell dials: config `broker_urls`.
+    `{host}` = this page's host; `{ws_origin}` = this page's own origin as ws:/wss:
+    (the portal's same-origin /mqtt). `where` is a location or a bare hostname. */
+export function brokerFor(cfg, where) {
+  const loc = typeof where === 'string' || !where ? { hostname: where } : where;
+  const host = loc.hostname || '127.0.0.1';
+  const wsOrigin = (loc.protocol === 'https:' ? 'wss://' : 'ws://') + (loc.host || host);
   const list = Array.isArray(cfg && cfg.broker_urls) ? cfg.broker_urls : [];
-  return list.map(u => String(u || '').replace('{host}', hostname || '127.0.0.1')).filter(Boolean);
+  return list.map(u => String(u || '').replace('{ws_origin}', wsOrigin).replace('{host}', host)).filter(Boolean);
 }

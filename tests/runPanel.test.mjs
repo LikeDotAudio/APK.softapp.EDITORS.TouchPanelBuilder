@@ -82,6 +82,8 @@ test('readbacks are listened to; Write topics and wildcards never', () => {
 test('the broker comes from config, with this page as {host}', () => {
   assert.deepEqual(brokerFor({ broker_urls: ['ws://{host}:9001'] }, 'bench.local'), ['ws://bench.local:9001']);
   assert.deepEqual(brokerFor({}, 'x'), []);
+  assert.deepEqual(brokerFor({ broker_urls: ['{ws_origin}/mqtt'] }, { protocol: 'http:', hostname: 'localhost', host: 'localhost:8080' }), ['ws://localhost:8080/mqtt']);
+  assert.deepEqual(brokerFor({ broker_urls: ['{ws_origin}/mqtt'] }, { protocol: 'https:', hostname: 'apk.local', host: 'apk.local' }), ['wss://apk.local/mqtt']);
 });
 
 test('a read with no readback of its own listens where KOMAND answers: <box>/Reading/<command>', () => {
