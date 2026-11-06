@@ -1525,6 +1525,7 @@ export class TouchPanelApp {
       if (mine) this.activeTab = mine[0];
     }
     this.renderDeviceTabs();
+    if (this.engineView === 'home' && !document.getElementById('engine-preview')?.hidden) this.renderEngineNav();
   }
 
   renderDeviceTabs() {
@@ -2079,11 +2080,16 @@ export class TouchPanelApp {
   }
 
   // The whole panel drawn by the real widget engine (FrontEnd/apkos-frame-host.html).
-  openEnginePreview() {
+  // Like a real touch panel: Home (every device on the bench) is the top; each device's panel is a branch.
+  // The Home bar stays pinned at the top of the preview, on Home and inside every branch.
+  openEnginePreview(view = 'home') {
     const box = document.getElementById('engine-preview');
     const host = document.getElementById('engine-host');
     if (!box || !host) return;
     box.hidden = false;
+    this.engineView = view;
+    this.renderEngineNav();
+    if (view === 'home') return;
     const post = () => frame.contentWindow?.postMessage({
       type: 'apkos:render-frame', layoutJson: this.currentFrame(), filePath: `TouchPanels/${this.panel.name || 'panel'}.json`,
     }, '*');
@@ -2097,6 +2103,34 @@ export class TouchPanelApp {
     } else {
       post();
     }
+  }
+
+  renderEngineNav() {
+    const nav = document.getElementById('engine-nav');
+    const home = document.getElementById('engine-home');
+    const host = document.getElementById('engine-host');
+    if (!nav || !home || !host) return;
+    const tabs = [...(this.deviceTabs || new Map())];
+    const atHome = this.engineView === 'home';
+    const active = this.activeTab && this.deviceTabs?.get(this.activeTab);
+    const here = active ? active.d.model : (this.panel.name || 'This panel');
+    nav.innerHTML = `<button class="btn btn-secondary btn-sm home-btn ${atHome ? 'on' : ''}" data-home>⌂ Home</button>`
+      + (atHome ? '' : `<span class="crumb">› ${esc(here)}</span>`);
+    nav.querySelector('[data-home]').addEventListener('click', () => this.openEnginePreview('home'));
+    home.hidden = !atHome;
+    host.hidden = atHome;
+    if (!atHome) return;
+    const tiles = tabs.length ? tabs.map(([k, t]) => `
+      <div class="home-tile ${k === this.activeTab ? 'on' : ''} ${t.gone ? 'gone' : ''}" data-key="${esc(k)}">
+        <b>${esc(t.d.model)}</b><span>${esc(t.d.name || '')}${t.want.serial ? ` · ${esc(t.want.serial)}` : ''}${t.gone ? ' · offline' : ''}</span>
+      </div>`)
+      : [`<div class="home-tile on" data-key=""><b>${esc(this.panel.name || 'This panel')}</b><span>The panel open in the designer</span></div>`,
+        '<div class="home-empty">No device on the bench yet — each one gets a tile here as it comes online.</div>'];
+    home.innerHTML = tiles.join('');
+    home.querySelectorAll('.home-tile').forEach(el => el.addEventListener('click', async () => {
+      if (el.dataset.key) await this.openDevice(el.dataset.key);
+      this.openEnginePreview('device');
+    }));
   }
 
   /** Open: this editor's block .json, a Gui_Frames frame, or the .ifc twin (APKSoftapp.openModel). The .ifc

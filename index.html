@@ -460,6 +460,23 @@
     .look-viewbar .verb-chip.on { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); background: var(--osc-bg-input); }
     .look-live { flex: 1; min-height: 0; background: #0b0b0b; }
     .look-live iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .look-live[hidden] { display: none; }
+    /* Engine Preview as a real touch panel: Home (every device) is the top, each device's panel a branch. */
+    .tp-home-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; overflow-x: auto; flex: none;
+      background: var(--osc-bg-input); border-bottom: 1px solid var(--osc-border-default); }
+    .tp-home-bar .home-btn { font-weight: 700; }
+    .tp-home-bar .home-btn.on { border-color: var(--osc-accent-primary); color: var(--osc-text-primary); }
+    .tp-home-bar .crumb { font-size: 11px; color: var(--osc-text-muted); white-space: nowrap; }
+    .tp-home { flex: 1; min-height: 0; overflow: auto; padding: 24px; background: #0b0b0b;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; align-content: start; }
+    .tp-home[hidden] { display: none; }
+    .tp-home .home-tile { display: flex; flex-direction: column; gap: 6px; padding: 18px 16px; cursor: pointer; user-select: none;
+      background: var(--osc-bg-surface); border: 1px solid var(--osc-border-default); border-radius: 10px; color: var(--osc-text-primary); }
+    .tp-home .home-tile:hover, .tp-home .home-tile.on { border-color: var(--osc-accent-primary); }
+    .tp-home .home-tile b { font-size: 15px; }
+    .tp-home .home-tile span { font-size: 11px; color: var(--osc-text-muted); }
+    .tp-home .home-tile.gone { opacity: 0.45; }
+    .tp-home .home-empty { color: var(--osc-text-muted); font-size: 12px; }
     .look-grid { flex: 1; min-height: 0; }
     .look-prev.strip { justify-content: center; gap: 8px; }
     .look-grid {
@@ -752,6 +769,8 @@
       <span style="flex:1"></span>
       <button class="btn btn-secondary btn-sm" id="engine-close">✕ Close</button>
     </div>
+    <nav class="tp-home-bar" id="engine-nav" title="Home is the top of the panel: every device on the bench; each device's panel is a branch under it"></nav>
+    <div class="tp-home" id="engine-home" hidden></div>
     <div class="look-live" id="engine-host"></div>
   </div>
 
