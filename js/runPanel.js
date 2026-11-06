@@ -42,6 +42,15 @@ export function handlerFor(widget, writeTopic = '') {
   };
 }
 
+/** The message that fires a DIRECT control (devicePanel.directOf): the value,
+    in the console's envelope, at the device's own control topic. Never retained
+    — the plugin obeys a retained press nowhere, by design. */
+export function directMessages(widget, value) {
+  const d = widget && widget.direct;
+  if (!d || !d.topic) return [];
+  return [{ topic: d.topic, payload: JSON.stringify({ value }) }];
+}
+
 /** The verb a control fires, lower-case. */
 export function verbOf(widget) {
   const h = handlerFor(widget);
@@ -66,6 +75,11 @@ export function fireMessages(topic, handler, value, args = null) {
 export function touchKind(widget) {
   const v = verbOf(widget);
   const b = (widget && widget.behavior) || {};
+  if (!v && widget && widget.direct) {
+    if (widget.direct.text) return 'text';
+    if (widget.type === 'button') return b.mode === 'momentary' ? 'press' : 'toggle';
+    return 'number';
+  }
   if (!v) return 'none';                                  // nothing bound: it only shows
   if (Array.isArray(b.args) && b.args.length) return 'args';
   if (Array.isArray(b.values) && b.values.length) return 'choose';

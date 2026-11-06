@@ -21,7 +21,7 @@ import { ControlLibrary, modelKey } from './library.js';
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(new URL('../config/discovered.json', import.meta.url).href) : Promise.resolve({}));
 import {
-  controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
+  controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
 } from './runPanel.js';
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
 import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from './tracePanel.js';
@@ -123,6 +123,14 @@ function publish(msgs) {
 }
 
 function fire(w, value, args = null) {
+  if (!handlerFor(w) && w.direct) {
+    // A network device's own control topic: no KOMAND between (ROAD-3523).
+    if (!publish(directMessages(w, value))) { say('No broker: nothing was sent.'); return false; }
+    const el = state.els.get(w.id);
+    if (el) { el.classList.remove('sent'); void el.offsetWidth; el.classList.add('sent'); }
+    say(`${w.direct.verb} ← ${value}`, 2000);
+    return true;
+  }
   const h = handlerFor(w, state.write);
   if (!h) { say(`${w.label}: not wired to a command`); return false; }
   if (!h.target) { say(`${w.label}: the box was not found on the bus, so there is nowhere to send ${h.command}`); return false; }
@@ -226,6 +234,23 @@ function argsPop(el, w) {
   });
 }
 
+function textPop(el, w) {
+  const pop = popAt(el, `
+    <h4>${esc(w.label)}</h4>
+    <input type="text" id="pt" value="">
+    <div class="row"><button data-close>Cancel</button><button class="go" id="pgo">SEND</button></div>
+    <div class="hint">${esc(w.direct ? w.direct.verb : '')}</div>`);
+  const t = pop.querySelector('#pt');
+  t.focus();
+  const go = () => {
+    const text = t.value.trim();
+    if (!text) { say('Nothing typed.'); return; }
+    if (fire(w, text)) closePop();
+  };
+  pop.querySelector('#pgo').addEventListener('click', go);
+  t.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); if (e.key === 'Escape') closePop(); });
+}
+
 function attach(el, w) {
   const kind = touchKind(w);
   el.dataset.touch = kind;
@@ -245,11 +270,12 @@ function attach(el, w) {
     });
     return;
   }
-  el.addEventListener('click', () => (kind === 'choose' ? choosePop : kind === 'args' ? argsPop : numberPop)(el, w));
+  el.addEventListener('click', () => (kind === 'text' ? textPop : kind === 'choose' ? choosePop : kind === 'args' ? argsPop : numberPop)(el, w));
 }
 
 /* The release edge, without the config again: KOMAND drops a falsy DO/NAB. */
 function publishRelease(w) {
+  if (w.direct && !handlerFor(w)) return;   // the plugin acts on the press; a release is nothing to it
   const h = handlerFor(w, state.write);
   if (!h || !h.target || !state.bus) return;
   const topic = controlTopic(window.APKContracts.Topics.gui.topic, state.key, w.id);
@@ -288,7 +314,7 @@ function render() {
   const first = p.pages[0] && p.pages[0].id;
   for (const w of p.widgets.filter(x => (x.page || first) === state.page)) {
     const el = document.createElement('div');
-    el.className = `tw${handlerFor(w) ? '' : ' unbound'}${state.on.has(w.id) ? ' on' : ''}`;
+    el.className = `tw${handlerFor(w) || w.direct ? '' : ' unbound'}${state.on.has(w.id) ? ' on' : ''}`;
     Object.assign(el.style, { left: `${w.x}px`, top: `${w.y}px`, width: `${w.w}px`, height: `${w.h}px` });
     Object.entries(widgetStyleVars({ style: w.style || {} })).forEach(([k, v]) => el.style.setProperty(k, v));
     state.els.set(w.id, el);

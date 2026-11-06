@@ -14,6 +14,13 @@
    listens to (`komand_listen_topic`). The deeper placements are the same
    device's further panels — `?placement=Device_Consoles` starts from one.
 
+   A NETWORK DEVICE'S PANEL (a Cast speaker, ROAD-3523) speaks no KOMAND: the
+   plugin's runner binds its fields straight to the device's own topics —
+   `device_control: "<Verb>"` → `…/Control/<Verb>`, `device_state: "<leaf>"` →
+   `…/<leaf>` (apk-plugin-runner panels.rs). Such a control is `direct`: the
+   running panel publishes `{"value": …}` to that topic, live, and a state leaf
+   is the readout's address.
+
    A model that presents no panel but has an api.json (the plain GUI page is
    drawn from it) still gets one: panelFromVariables() lays its set / do / rig
    commands out a page per command group, and its gets as readouts.
@@ -33,6 +40,7 @@ const FRAME_TO_CONTROL = {
   // value + horizontal fader + dial in one field: on glass, the dial.
   _Horizontal_with_dial_Value: 'knob',
   _GuiFader: 'fader',
+  _CustomFader: 'fader',
   _GuiFaderVertical: 'fader',
   _GuiFaderHorizontal: 'fader',
   _GuiButtonToggle: 'button',
@@ -195,7 +203,7 @@ export function placementsOf(doc, prefer = DEFAULT_PLACEMENT) {
 
 /* "0_output/0_output.json" -> "OUTPUT" */
 function pageName(path, content) {
-  const dir = String(path || '').split('/')[0] || Object.keys(content || {})[0] || 'Page';
+  const dir = String(path || '').split('/')[0].replace(/\.json$/i, '') || Object.keys(content || {})[0] || 'Page';
   return dir.replace(/^\d+_/, '').replace(/_/g, ' ').trim().toUpperCase() || 'PAGE';
 }
 
@@ -211,6 +219,18 @@ function leaves(node, band, out) {
     }
   }
   return out;
+}
+
+/* Frame types a person types into: their control sends the text. */
+const TEXT_FIELDS = new Set(['_TextInput', '_GuiTextInput', '_SmartInput']);
+
+/** A field bound straight to its device's control topic (no KOMAND), or null. */
+export function directOf(field) {
+  if (!field || typeof field.device_control !== 'string' || typeof field.topic !== 'string' || !field.topic) return null;
+  if (field.komand_handler && field.komand_handler.command) return null;
+  const d = { topic: field.topic, verb: field.device_control };
+  if (TEXT_FIELDS.has(field.type)) d.text = true;
+  return d;
 }
 
 /** The binding a frame field already carries, in the builder's binding shape. */
@@ -247,7 +267,16 @@ export function panelFromPresented(doc, opts = {}) {
   const sections = { rig: [], nab: [] };
   let n = 0;
 
+  /* One page per frame — and per top-level bin of a frame that holds several
+     (a plugin presents its family as ONE file, playback / cast / session /
+     device bins in it, where a bench instrument presents a file per bin). */
+  const sheets = [];
   pl.frames.forEach((frame) => {
+    const bins = Object.entries(frame.content || {}).filter(([, b]) => b && b.type === 'OcaBin');
+    if (bins.length > 1) bins.forEach(([k, b]) => sheets.push({ path: `${k}/${k}.json`, content: { [k]: b } }));
+    else sheets.push(frame);
+  });
+  sheets.forEach((frame) => {
     const items = [];
     for (const { key, field, band } of leaves(frame.content, null, [])) {
       const h0 = field.komand_handler || {};
@@ -263,10 +292,12 @@ export function panelFromPresented(doc, opts = {}) {
         label: fieldLabel(key, field).toUpperCase(),
         x: 0, y: 0, w, h,
         page: '',
-        address: field.komand_listen_topic || field.komand_handler?.target || '',
+        address: field.komand_listen_topic || (field.device_state && field.topic) || field.komand_handler?.target || '',
         channel: 1,
         bindings: [],
       };
+      const direct = directOf(field);
+      if (direct) widget.direct = direct;
       const behavior = sec ? { args } : behaviorOf(field, type);
       if (Object.keys(behavior).length) widget.behavior = behavior;
       if (behavior.subtitle) widget.subtitle = behavior.subtitle;

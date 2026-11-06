@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
+  controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
 } from '../js/runPanel.js';
 
 const gui = (path) => `APK.audio/Gui/${path.join('/')}`;
@@ -93,4 +93,18 @@ test('a read with no readback of its own listens where KOMAND answers: <box>/Rea
   const own = 'APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Reading/settings/output';
   assert.equal(readbackOf({ address: own, komand: FRAME_HANDLER }), own);
   assert.deepEqual([...readbackTopics([nab]).keys()], ['APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Reading/Read_IDN']);
+});
+
+test('a direct control (a Cast verb) is one live {value} at the device\'s own topic, no KOMAND', () => {
+  const T = 'APK.audio/System/Protocols/chromecast/Device/Speaker/G/Control';
+  const play = { type: 'button', behavior: { mode: 'momentary' }, direct: { topic: `${T}/Play`, verb: 'Play' }, bindings: [] };
+  assert.equal(handlerFor(play), null, 'nothing taught to KOMAND');
+  assert.equal(touchKind(play), 'press');
+  assert.equal(touchKind({ ...play, behavior: { mode: 'toggle' } }), 'toggle');
+  assert.equal(touchKind({ type: 'fader', direct: { topic: `${T}/Volume`, verb: 'Volume' } }), 'number');
+  assert.equal(touchKind({ type: 'readout', direct: { topic: `${T}/Cast`, verb: 'Cast', text: true } }), 'text');
+  assert.deepEqual(directMessages(play, true), [{ topic: `${T}/Play`, payload: '{"value":true}' }]);
+  assert.deepEqual(directMessages({}, true), []);
+  assert.equal(readbackOf({ address: 'APK.audio/System/Protocols/chromecast/Device/Speaker/G/player_state' }),
+    'APK.audio/System/Protocols/chromecast/Device/Speaker/G/player_state');
 });

@@ -185,3 +185,29 @@ test('a device that comes online gets a tab once; its link names the box', () =>
   assert.equal(w.serial, '');
   assert.equal(w.resource, 'GPIB0::22::INSTR');
 });
+
+test('a network device panel (Cast, ROAD-3523): one page per bin, every control direct to its own topic', () => {
+  const D = 'APK.audio/System/Protocols/chromecast/Device/Speaker/Garage_speaker';
+  const bin = (blocks) => ({ type: 'OcaBin', blocks });
+  const blk = (fields) => ({ type: 'OcaBlock', fields });
+  const cast = { key: 'chromecast-0bb4', device: { type: 'chromecast', model: 'Google Nest Mini', serial: '0bb4', write_topic: `${D}/Control` },
+    placements: [{ at: 'Instruments/Cast', frames: [{ path: 'chromecast.json', content: {
+      playback: bin({ T: blk({
+        play: { type: '_GuiActuator', device_control: 'Play', topic: `${D}/Control/Play`, label: { inactive: { text: { En: 'PLAY' } } } },
+        mute: { type: '_GuiButtonToggle', device_control: 'Mute', topic: `${D}/Control/Mute`, latching: true },
+        volume: { type: '_CustomFader', device_control: 'Volume', topic: `${D}/Control/Volume`, domain: { min: 0, max: 100 } },
+        state: { type: '_Value', device_state: 'player_state', topic: `${D}/player_state`, read_only: true } }) }),
+      cast: bin({ C: blk({ cast: { type: '_TextInput', device_control: 'Cast', topic: `${D}/Control/Cast`, momentary: true } }) }),
+    } }] }] };
+  const p = panelFromPresented(cast);
+  assert.deepEqual(p.pages.map(pg => pg.name), ['PLAYBACK', 'CAST']);
+  const by = (label) => p.widgets.find(w => w.label === label);
+  assert.deepEqual(by('PLAY').direct, { topic: `${D}/Control/Play`, verb: 'Play' });
+  assert.equal(by('PLAY').behavior.mode, 'momentary');
+  assert.equal(by('MUTE').behavior.mode, 'toggle');
+  assert.equal(by('VOLUME').type, 'fader');
+  assert.equal(by('VOLUME').behavior.max, 100);
+  assert.equal(by('STATE').address, `${D}/player_state`, 'a state leaf is the readout');
+  assert.equal(by('STATE').direct, undefined);
+  assert.deepEqual(by('CAST').direct, { topic: `${D}/Control/Cast`, verb: 'Cast', text: true });
+});
