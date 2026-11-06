@@ -104,6 +104,26 @@ export function modelKey(family, model) {
   return `${family || ''}/${model || ''}`;
 }
 
+/**
+ * 📚 The instrument model a BIM part is (ROAD-3572): the part's own panel template is
+ * its family (part.panel.template), else the one catalogue line whose model is the
+ * part's. '' when the instrument library has no command surface for it.
+ */
+export function modelKeyForPart(part, models) {
+  if (!part || !models) return '';
+  const model = String(part.model || '').toLowerCase();
+  if (!model) return '';
+  const fam = part.panel && part.panel.template;
+  if (fam) {
+    const k = modelKey(fam, part.model);
+    if (models.has(k)) return k;
+  }
+  const same = [...models.values()].filter((m) => String(m.model).toLowerCase() === model);
+  const maker = String(part.manufacturer || '').toLowerCase();
+  const pick = same.length > 1 && maker ? same.find((m) => String(m.manufacturer).toLowerCase() === maker) : same[0];
+  return (pick || same[0] || {}).key || '';
+}
+
 // LIVENESS — where a bench device sits in the left column. Online first, then
 // recently online, then UNKNOWN (orange: nobody has said either way), then
 // offline. Offline devices stay listed, greyed, so a panel's bindings to them

@@ -119,3 +119,14 @@ test('ControlLibrary loads catalogue then a model, falling back to /api/os/', as
   assert.equal(vars.length, 5);
   assert.ok(asked.includes('/api/os/instrument/api'));
 });
+
+import { modelKeyForPart } from '../js/library.js';
+test('a BIM part finds its instrument model: its panel template, else the one model of that name (ROAD-3572)', () => {
+  const models = new Map([
+    ['DMM/34401A', { key: 'DMM/34401A', model: '34401A', family: 'DMM', manufacturer: 'Keysight' }],
+    ['FG/33220A', { key: 'FG/33220A', model: '33220A', family: 'FG', manufacturer: 'Agilent' }],
+  ]);
+  assert.equal(modelKeyForPart({ model: '34401A', panel: { template: 'DMM' } }, models), 'DMM/34401A');
+  assert.equal(modelKeyForPart({ model: '33220a', manufacturer: 'Keysight' }, models), 'FG/33220A');
+  assert.equal(modelKeyForPart({ model: 'MXA920' }, models), '');
+});

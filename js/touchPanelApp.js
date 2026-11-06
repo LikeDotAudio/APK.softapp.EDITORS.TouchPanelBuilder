@@ -19,8 +19,9 @@ import { panelToFrame, frameToPanel } from './frameExport.js';
 import {
   ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType,
   humanLabel, bindingFor, matchesQuery,
-  agoText,
+  agoText, modelKeyForPart,
 } from './library.js';
+import { libraryButton, bimFields } from './bimLibrary.js';
 
 export const SCREEN_PRESETS = [
   { id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800 },
@@ -83,6 +84,7 @@ export class TouchPanelApp {
     // Library view state
     this.library = new ControlLibrary();
     this.selectedModels = [];          // model keys whose variables are listed
+    this.bimFor = new Map();           // model key -> {bimId, bimRef} it was picked from the BIM library as (ROAD-3572)
     this.deviceFor = new Map();        // model key -> bench device it was picked as
     this.varsByModel = new Map();      // model key -> variables[]
     this.varIndex = new Map();         // variable id -> variable
@@ -575,6 +577,10 @@ export class TouchPanelApp {
       this.addWidget('button');
     });
 
+    // 📚 Library (ROAD-3572): pick the device as a BIM part; its command surface lists its variables
+    this.devSearch.before(libraryButton((items) => this.pickFromLibrary(items[0]), {
+      className: 'btn btn-secondary btn-sm', title: 'Choose a device from the BIM library' }));
+
     this.devSearch.addEventListener('input', (e) => {
       this.devQuery = e.target.value.trim().toLowerCase();
       this.renderDevices();
@@ -704,6 +710,23 @@ export class TouchPanelApp {
       }
     }));
     this.renderVariables();
+  }
+
+  /** A part picked from the BIM library: the instrument model it is, selected, with its BIM reference. */
+  async pickFromLibrary(item) {
+    if (!item) return;
+    let part = item.bim;
+    const url = item.ref && item.ref.url;
+    if (!(part.panel && part.panel.template) && url && /\/api\/bim\/parts\//.test(url)) {
+      try { const r = await fetch(url); if (r.ok) part = Object.assign({}, part, await r.json()); } catch (_) { /* the block view only */ }
+    }
+    const key = modelKeyForPart(part, this.library.models);
+    if (!key) {
+      this.devCount.textContent = `${part.name || part.id}: no command surface in the instrument library`;
+      return;
+    }
+    this.bimFor.set(key, bimFields(item));
+    this.selectModel(key);
   }
 
   selectModel(key, { additive = false, device = null } = {}) {
@@ -1012,7 +1035,10 @@ export class TouchPanelApp {
     if (!w || !v) return;
     w.bindings = w.bindings || [];
     if (!w.bindings.some(b => b.id === v.id)) {
-      w.bindings.push(bindingFor(v, this.deviceFor.get(modelKey(v.family, v.model))));
+      const b = bindingFor(v, this.deviceFor.get(modelKey(v.family, v.model)));
+      const bim = this.bimFor.get(modelKey(v.family, v.model));   // picked from the BIM library: its part and reference
+      if (bim && bim.bimId) Object.assign(b, { bimId: bim.bimId }, bim.bimRef ? { bimRef: bim.bimRef } : {});
+      w.bindings.push(b);
     }
     if (!w.address || /^\/control\/param_\d+$/.test(w.address)) {
       w.address = v.topic || `/${v.family}/${v.model}/${v.command}`;
