@@ -14,3 +14,6 @@ How it is built, shipped, and where it lands.
 ## Delivered 2026-11-04
 
 Library-wired controls (185 devices, ~39,000 variables); device theme and a true-scale glass; 1,096 looks (69 era looks incl. Ward-Beck Systems and UREI, plus the widget library) with distinct hardware and a live engine view; bench liveness; page tabs; Set/Do/Rig/Get/Nab sub-categories and grab bags; drag a device for its whole palette; push-and-hold copy; frame export / import; engine glass and engine preview (ROAD-3499, closed).
+
+## Releases
+- **Released `2.0.0`, tag `v2.0.0`** (2026-11-05, ROAD-3452, the owner's V2) — no SDK pin; every manifest says 2.0.0; GitHub release `v2.0.0`.
