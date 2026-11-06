@@ -24,11 +24,14 @@ import {
 import { libraryButton, bimFields } from './bimLibrary.js';
 import { touchPanelToIfc, touchPanelFromIfc } from './touchPanelIfc.js';
 
+// Each screen is a BIM library part (ROAD-3598 answer 7): `part` is its id in DATABASE.server.BIM
+// (SRC/importers/import_control_surfaces.py writes it from this table), and the panel's IFC type is that
+// part's (GlobalId part/<id>, IfcUnitaryControlElementType CONTROLPANEL — touchPanelIfc.js).
 export const SCREEN_PRESETS = [
-  { id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800 },
-  { id: '7in', name: '7.0″ Tabletop Panel (1024 × 600)', w: 1024, h: 600 },
-  { id: '15in', name: '15.6″ Wall Mount (1920 × 1080)', w: 1920, h: 1080 },
-  { id: '22in', name: '21.5″ Main Console (1920 × 1080)', w: 1920, h: 1080 },
+  { id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800, part: 'generic/touch-panel-10in' },
+  { id: '7in', name: '7.0″ Tabletop Panel (1024 × 600)', w: 1024, h: 600, part: 'generic/touch-panel-7in' },
+  { id: '15in', name: '15.6″ Wall Mount (1920 × 1080)', w: 1920, h: 1080, part: 'generic/touch-panel-15in' },
+  { id: '22in', name: '21.5″ Main Console (1920 × 1080)', w: 1920, h: 1080, part: 'generic/touch-panel-22in' },
 ];
 
 // Rows drawn in the variable column before "show more" — the DOM, not the

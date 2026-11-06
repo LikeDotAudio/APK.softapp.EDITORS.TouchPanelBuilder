@@ -9,8 +9,11 @@
    scripts/vendor-ifc.mjs), no IfcOpenShell in the page. Byte-deterministic.
 
      IfcProject ─ IfcSite ─ IfcBuilding ─ IfcBuildingStorey ─ IfcSpace (the panel's room, when it has one)
-     the hardware  IfcUnitaryControlElementType CONTROLPANEL, one per screen preset (Name = the preset's
-                   words, ElementType = its id, '10in')
+     the hardware  IfcUnitaryControlElementType CONTROLPANEL: the screen preset's BIM PART (ROAD-3598
+                   answer 7; SCREEN_PRESETS[i].part, DATABASE.server.BIM generic/touch-panel-10in ...),
+                   GlobalId part/<id> as the library's own .ifc twin gives it, Name = the preset's words,
+                   Tag = the part id, ElementType = its id ('10in'), APK_Part.PartId; a preset with no
+                   part keeps its own type
      the panel     IfcUnitaryControlElement CONTROLPANEL typed by it, Name = the panel's name, Tag = its id,
                    contained in the room's IfcSpace (else the storey)
        APK_TouchPanelLayout  {PanelId, ScreenPreset, ResolutionWidth, ResolutionHeight (px), Pages, Controls,
@@ -103,8 +106,11 @@ export function touchPanelToIfc(block, { name, presets = [] } = {}) {
 
   // ---- the hardware type and the panel
   const presetId = str(b.screenPreset);
-  const type = W.add('IFCUNITARYCONTROLELEMENTTYPE', ifcGuid('touchpanel-type', presetId || 'custom'), oh,
-    preset ? str(preset.name) : presetId ? `Touch panel ${presetId}` : 'Touch panel', null, null, null, null, null,
+  const pid = preset && preset.part ? str(preset.part) : '';
+  const partSets = pid ? [W.add('IFCPROPERTYSET', ifcGuid('part', pid, 'pset', 'APK_Part'), oh, 'APK_Part', null,
+    [W.add('IFCPROPERTYSINGLEVALUE', 'PartId', null, ident(pid), null)])] : null;
+  const type = W.add('IFCUNITARYCONTROLELEMENTTYPE', pid ? ifcGuid('part', pid) : ifcGuid('touchpanel-type', presetId || 'custom'), oh,
+    preset ? str(preset.name) : presetId ? `Touch panel ${presetId}` : 'Touch panel', null, null, partSets, null, pid || null,
     presetId || null, enumv('CONTROLPANEL'));
   W.add('IFCRELDECLARES', g('declares'), oh, null, null, project, [type]);
   const panelGid = g('panel');

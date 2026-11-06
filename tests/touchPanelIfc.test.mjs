@@ -24,7 +24,7 @@ function out(name, text) {
 }
 
 // the builder's SCREEN_PRESETS row (js/touchPanelApp.js imports the DOM, so the test names the one it uses)
-const PRESETS = [{ id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800 }];
+const PRESETS = [{ id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800, part: 'generic/touch-panel-10in' }];
 const panel = () => ({
   id: 'tp_01', name: 'TP-STAGE-01', room: 'MAIN AUDITORIUM', screenPreset: '10in', width: 1280, height: 800,
   theme: { preset: 'Deep Horizon', style: {} }, savedLooks: [], deviceId: '00:10:7f:00:00:01',
@@ -54,6 +54,11 @@ test('the panel: an IfcUnitaryControlElement CONTROLPANEL in its room, typed by 
   assert.equal(tp.args[7], 'tp_01');
   const [ty] = of(f, 'IFCUNITARYCONTROLELEMENTTYPE');
   assert.deepEqual([ty.args[2], ty.args[8], ty.args[9].value], ['10.1″ Touch Panel (1280 × 800)', '10in', 'CONTROLPANEL']);
+  // the screen's BIM part types it (ROAD-3598 answer 7): GlobalId part/<id>, Tag the part id, APK_Part.PartId
+  assert.deepEqual([ty.args[0], ty.args[7]], [ifcGuid('part', 'generic/touch-panel-10in'), 'generic/touch-panel-10in']);
+  const [partSet] = ty.args[5].map((r) => f.byId.get(r.id));
+  assert.equal(partSet.args[2], 'APK_Part');
+  assert.equal(f.byId.get(partSet.args[4][0].id).args[2].value, 'generic/touch-panel-10in');
   const inSpace = of(f, 'IFCRELCONTAINEDINSPATIALSTRUCTURE').find((r) => r.args[4].some((x) => x.id === tp.id));
   assert.equal(f.byId.get(inSpace.args[5].id).type, 'IFCSPACE');
   assert.deepEqual(getPsets(f, tp).APK_TouchPanelLayout, {
