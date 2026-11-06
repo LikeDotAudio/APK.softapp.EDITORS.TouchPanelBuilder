@@ -168,7 +168,10 @@ export function behaviorOf(field, type) {
 /** The label a field shows in its frame: label.text.En, label.En, else its key. */
 export function fieldLabel(key, field) {
   const l = field && field.label;
-  return (text(l && typeof l === 'object' && 'text' in l ? l.text : l) || String(key || '')).trim();
+  // A two-state label ({inactive: {text}, active: {text}}) names itself at rest.
+  const face = l && typeof l === 'object' && !('text' in l) ? (l.inactive || l.active) : null;
+  const said = face && typeof face === 'object' ? text(face.text) : '';
+  return (said || text(l && typeof l === 'object' && 'text' in l ? l.text : l) || String(key || '')).trim();
 }
 
 /** "TCPIP0::44.44.44.222::gpib7,22::INSTR" and "TCPIP::44.44.44.222::gpib7,22::INSTR" are one box. */
@@ -224,11 +227,24 @@ function leaves(node, band, out) {
 /* Frame types a person types into: their control sends the text. */
 const TEXT_FIELDS = new Set(['_TextInput', '_GuiTextInput', '_SmartInput']);
 
-/** A field bound straight to its device's control topic (no KOMAND), or null. */
+/* `…/Control/<Verb>` — the leaf a plugin's control agent reads (topics::DEVICE_CONTROL_LEAF). */
+const CONTROL_TOPIC = /\/Control\/([^/#+]+)$/;
+
+/** A field bound straight to a control topic (no KOMAND), or null: one the
+    runner bound by `device_control`, or one whose `topic` the template named
+    outright on a `…/Control/<Verb>` — the Cast panel's All-devices fader and
+    MUTE ALL write `chromecast/Group/All/Control/Volume|Mute` (ROAD-3546). */
 export function directOf(field) {
-  if (!field || typeof field.device_control !== 'string' || typeof field.topic !== 'string' || !field.topic) return null;
+  if (!field || typeof field.topic !== 'string' || !field.topic) return null;
   if (field.komand_handler && field.komand_handler.command) return null;
-  const d = { topic: field.topic, verb: field.device_control };
+  if (field.read_only === true || typeof field.device_state === 'string') return null;
+  let verb = typeof field.device_control === 'string' ? field.device_control : '';
+  if (!verb) {
+    const m = CONTROL_TOPIC.exec(field.topic);
+    if (!m) return null;
+    verb = m[1];
+  }
+  const d = { topic: field.topic, verb };
   if (TEXT_FIELDS.has(field.type)) d.text = true;
   return d;
 }

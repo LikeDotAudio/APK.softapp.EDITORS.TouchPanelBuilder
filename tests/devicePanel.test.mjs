@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  panelFromPresented, panelFromVariables, isPanelFor, placementsOf, resourceKey,
+  panelFromPresented, panelFromVariables, isPanelFor, placementsOf, resourceKey, directOf, fieldLabel,
   controlFor, behaviorOf, linkQuery, linkSearch, wantFor, arrivals,
 } from '../js/devicePanel.js';
 
@@ -210,4 +210,21 @@ test('a network device panel (Cast, ROAD-3523): one page per bin, every control 
   assert.equal(by('STATE').address, `${D}/player_state`, 'a state leaf is the readout');
   assert.equal(by('STATE').direct, undefined);
   assert.deepEqual(by('CAST').direct, { topic: `${D}/Control/Cast`, verb: 'Cast', text: true });
+});
+
+test('a field the template bound outright to a Control/<Verb> topic is direct too (ROAD-3546); a readout or a state topic is not', () => {
+  const G = 'APK.audio/System/Protocols/chromecast/Group/All/Control';
+  assert.deepEqual(directOf({ type: '_CustomFader', topic: `${G}/Volume` }), { topic: `${G}/Volume`, verb: 'Volume' });
+  assert.deepEqual(directOf({ type: '_GuiButtonToggle', topic: `${G}/Mute` }), { topic: `${G}/Mute`, verb: 'Mute' });
+  assert.equal(directOf({ type: '_Value', topic: `${G}/Volume`, read_only: true }), null);
+  assert.equal(directOf({ type: '_Value', device_state: 'model', topic: 'APK.audio/x/model' }), null);
+  assert.equal(directOf({ type: '_GuiFader', topic: 'APK.audio/System/Protocols/x/Device/a/level' }), null);
+  assert.equal(directOf({ type: '_GuiFader', topic: `${G}/#` }), null);
+  assert.equal(directOf({ type: '_GuiFader', topic: `${G}/Volume`, komand_handler: { command: 'Set' } }), null);
+});
+
+test('a two-state label names the control by its resting face', () => {
+  assert.equal(fieldLabel('group_mute', { label: { active: { text: { En: 'MUTED ALL' } }, inactive: { text: { En: 'MUTE ALL' } } } }), 'MUTE ALL');
+  assert.equal(fieldLabel('k', { label: { En: 'Volume' } }), 'Volume');
+  assert.equal(fieldLabel('k', {}), 'k');
 });
