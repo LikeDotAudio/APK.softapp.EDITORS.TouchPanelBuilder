@@ -64,6 +64,7 @@ export const CONTROL_TO_FRAME = {
   tile: '_HighVisButton',
   rig: '_SmartValue',
   nab: '_SmartValue',
+  trace: '_DynamicGraph',   // the engine's graph kind (frameLayout/widgetDispatch.js) — a monitoring box's trace
 };
 const FADER_H = '_GuiFaderHorizontal';
 const BUTTON_MOMENTARY = '_GuiButton';
@@ -79,6 +80,7 @@ const FRAME_TO_CONTROL = {
   SelectorSwitch: 'selector', _SelectorSwitch: 'selector',
   _GuiMeter: 'meter', _Meter: 'meter', _VuMeter: 'vu',
   _HighVisButton: 'tile',
+  _DynamicGraph: 'trace', DynamicGraph: 'trace',
 };
 const KEYWORDS = [
   ['ltp', 'ltp'], ['cmdp', 'cmdp'], ['mdp', 'mdp'], ['needle', 'vu'], ['vu', 'vu'],

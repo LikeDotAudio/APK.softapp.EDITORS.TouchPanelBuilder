@@ -458,5 +458,34 @@ export const CONTROL_DEFINITIONS = {
           <span style="position:absolute; left:0; right:0; bottom:0; text-align:center; font-size:${V('fs', '10px')}; font-weight:${V('fw', '600')}; color:${V('text', '#94a3b8')};">${c.label || 'SOURCE'}</span>
         </div>`;
     }
+  },
+  trace: {
+    // A monitoring box's waveform or spectrum (ROAD-3516, js/tracePanel.js): one
+    // lane per source, points 0..255 bottom to top, drawn — never a text readout.
+    type: 'trace',
+    name: 'Trace',
+    icon: '〰️',
+    w: 320,
+    h: 180,
+    render(c) {
+      const traces = Array.isArray(c.trace) && c.trace.length ? c.trace : null;
+      const n = traces ? traces.length : 1;
+      const lane = 256 / n;
+      const COLOURS = ['#5aff7a', '#ffd400', '#5a9dff', '#ff6eb4'];
+      const lines = (traces || []).map((t, i) => {
+        const pts = t.points || [];
+        const k = pts.length > 1 ? 1000 / (pts.length - 1) : 0;
+        const d = pts.map((p, j) => `${(j * k).toFixed(1)},${(lane * (i + 1) - (p / 255) * lane).toFixed(1)}`).join(' ');
+        return `<polyline points="${d}" fill="none" stroke="${COLOURS[i % COLOURS.length]}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+          <text x="6" y="${(lane * i + 14).toFixed(1)}" font-size="11" fill="#64748b" font-family="monospace">${String(t.source || '').replace(/[<&]/g, '')}</text>`;
+      }).join('');
+      const grid = Array.from({ length: n }, (_, i) => `<line x1="0" x2="1000" y1="${(lane * i + lane / 2).toFixed(1)}" y2="${(lane * i + lane / 2).toFixed(1)}" stroke="#1e293b" vector-effect="non-scaling-stroke"/>`).join('');
+      return `
+        <div style="width:100%; height:100%; box-sizing:border-box; ${box('#0a0d12', '#222938', '6px')} position:relative; overflow:hidden;">
+          <svg viewBox="0 0 1000 256" preserveAspectRatio="none" style="position:absolute; inset:0; width:100%; height:100%;">${grid}${lines}</svg>
+          <span style="position:absolute; right:8px; top:4px; font-size:${V('fs', '10px')}; font-weight:${V('fw', '700')}; color:${V('text', '#94a3b8')};">${c.label || 'TRACE'}</span>
+          ${traces ? '' : `<span style="position:absolute; left:0; right:0; top:45%; text-align:center; font-size:11px; color:#64748b;">no trace yet</span>`}
+        </div>`;
+    }
   }
 };

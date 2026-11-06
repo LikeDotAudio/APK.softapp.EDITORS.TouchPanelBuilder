@@ -24,6 +24,7 @@ import {
   controlTopic, handlerFor, fireMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
 } from './runPanel.js';
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
+import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from './tracePanel.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
@@ -69,6 +70,24 @@ async function findBox(want) {
     const r = await fetch(`/api/instrument/status?${q}`, { cache: 'no-store' });
     return r.ok ? await r.json() : null;
   } catch (_) { return null; }
+}
+
+/** Every family's thing.json roles (WEB.OsApi /api/instrument/families), or {}. */
+async function familyRoles() {
+  for (const url of ['/api/instrument/families', '/api/os/instrument/families']) {
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (r.ok) return await r.json();
+    } catch (_) { /* not served under this spelling */ }
+  }
+  return {};
+}
+
+/** The retained rig a box's traces arrive on (Captures/Rig/<device>), or ''. */
+function rigTopicOf(writeTopic) {
+  const C = window.APKContracts;
+  const key = deviceKeyOf(writeTopic);
+  return key && C && C.Topics.captures ? C.Topics.captures.topic({ kind: 'Rig', capture: C.captureSegment(key) }) : '';
 }
 
 async function loadPanel(want) {
@@ -120,10 +139,20 @@ function listen() {
   if (!link) return;
   for (const [topic, widgets] of readbackTopics(state.panel.widgets, state.write)) {
     link.subscribe(topic, (_t, text) => {
+      // A waveform or spectrum answer is a series: drawn as a trace, not as text (tracePanel.js).
+      const series = seriesOf(text);
       for (const w of widgets) {
-        w.value = readingText(text, w.behavior && w.behavior.unit);
+        if (series) { w.type = 'trace'; w.trace = [{ source: w.label, points: toBytes(series) }]; }
+        else w.value = readingText(text, w.behavior && w.behavior.unit);
         draw(w);
       }
+    });
+  }
+  // A monitoring box's TRACE page: every Trace/<source> of its retained rig.
+  for (const w of state.panel.widgets.filter(x => x.type === 'trace' && x.rig)) {
+    link.subscribe(w.rig, (_t, text) => {
+      const traces = tracesFromRig(text);
+      if (traces.length) { w.trace = traces; draw(w); }
     });
   }
 }
@@ -285,7 +314,7 @@ async function start() {
   if (!want.model) { $('run-name').textContent = 'NO DEVICE NAMED (?model=…)'; return; }
   $('run-name').textContent = `${want.model} — LOADING…`;
   $('run-edit').href = `./index.html${linkSearch(want, '')}`;
-  const [generated, box, bus] = await Promise.all([loadPanel(want), findBox(want), connectBus()]);
+  const [generated, box, bus, families] = await Promise.all([loadPanel(want), findBox(want), connectBus(), familyRoles()]);
   // The panel saved for this box runs first (ROAD-3503), unless a placement was asked for.
   const topic = bus && !want.placement
     ? savedTopic(window.APKContracts.Topics.gui.topic, savedIdentity(generated, want)) : '';
@@ -295,12 +324,14 @@ async function start() {
         deviceId: saved.deviceId || (generated && generated.deviceId) || '', placement: 'saved panel' }
     : generated;
   if (!panel) { $('run-name').textContent = `${want.model}: NO PANEL PRESENTED AND NO API.JSON`; return; }
-  state.panel = panel;
   state.key = panel.deviceId || want.serial || want.model;
   state.write = (box && box.write_topic) || (panel.device && panel.device.write_topic) || '';
+  // What the family IS (its thing.json roles, ROAD-3516): a monitoring box gets its trace.
+  const roles = rolesFor(families, want.family || (panel.device && panel.device.type));
+  state.panel = isMonitoring(roles) ? withTracePage(panel, roles, rigTopicOf(state.write), { width: W, height: H }) : panel;
   state.bus = bus;
-  const asked = want.page && panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
-  state.page = asked ? asked.id : (panel.pages[0] && panel.pages[0].id);
+  const asked = want.page && state.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
+  state.page = asked ? asked.id : (state.panel.pages[0] && state.panel.pages[0].id);
   $('run-name').textContent = panel.name.replace(/ TOUCH PANEL$/, '');
   document.title = `${$('run-name').textContent} · Touch Panel`;
   $('run-from').textContent = `from ${panel.placement}`;
