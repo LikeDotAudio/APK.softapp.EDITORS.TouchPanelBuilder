@@ -22,6 +22,7 @@ import {
   agoText, modelKeyForPart,
 } from './library.js';
 import { libraryButton, bimFields } from './bimLibrary.js';
+import { touchPanelToIfc, touchPanelFromIfc } from './touchPanelIfc.js';
 
 export const SCREEN_PRESETS = [
   { id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800 },
@@ -116,7 +117,7 @@ export class TouchPanelApp {
       does: 'Designs a touch panel: pages of faders, knobs, buttons and meters on a chosen glass, each wired to an instrument variable, wearing a device theme or a look from the library.',
       inputs: [
         { name: 'Touch panel block', from: 'the CAD drawing when opened from the CAD', kind: 'cad' },
-        { name: 'Block file', from: 'a .json saved by this editor, picked with Open', kind: 'file' },
+        { name: 'Block file', from: 'a .json saved by this editor or its .ifc twin (the panel, no layout), or a Gui_Frames frame, picked with Open (APKSoftapp.openModel)', kind: 'file' },
         { name: 'Instrument library', from: 'GET /api/instrument/api (WEB.OsApi, every <Model>.api.json) — the models and their variables', kind: 'http' },
         { name: 'Bench', from: 'GET /api/bim/instances, else /api/devices — the boxes online or remembered, re-read every 30 s', kind: 'http' },
         { name: 'Looks', from: 'GET /FrontEnd/api/tree.json — the widget library looks (vintage palettes are built in)', kind: 'http' },
@@ -124,7 +125,8 @@ export class TouchPanelApp {
         { name: 'Discovered surfaces', from: 'what the bus has discovered; which kinds show is config/discovered.json', kind: 'bus' },
       ],
       outputs: [
-        { name: 'Touch panel block', to: 'the CAD drawing on Save & Return, or a .json download when standalone', kind: 'file' },
+        { name: 'Touch panel block', to: 'the CAD drawing on Save & Return; standalone, Save Model writes <name>.json beside its .ifc twin', kind: 'file' },
+        { name: 'IFC twin', to: '<name>.ifc (IFC4X3_ADD2) with the .json when standalone: the panel an IfcUnitaryControlElement CONTROLPANEL in its room, its layout by hash and a document reference to the .json (js/touchPanelIfc.js)', kind: 'file' },
       ],
       controls: [
         { name: 'Add a control', how: 'Drag from the palette onto the glass, or + Add Widget' },
@@ -135,7 +137,7 @@ export class TouchPanelApp {
         { name: 'Schedule', how: 'The control table: edit fields, ▾ Styles opens every style editor, ⤢ Pop Out (Esc docks)' },
         { name: 'Open / Save & Return / Close / Discovered', how: 'Top-bar buttons' },
       ],
-      problems: ['fetch_failed', 'http_not_found', 'bad_json', 'bad_input', 'file_unreadable', 'bus_missing', 'device_stale'],
+      problems: ['fetch_failed', 'http_not_found', 'bad_json', 'bad_input', 'file_unreadable', 'bus_missing', 'device_stale', 'save_failed'],
     });
   }
 
@@ -1448,7 +1450,7 @@ export class TouchPanelApp {
     }
   }
 
-  saveBlock() {
+  async saveBlock() {
     // A panel opened for a box is also kept for that box, retained on the bus,
     // so its link and its touch pad open it next time (ROAD-3503).
     if (this.link && this.savedTopicName && writeSaved(this.bus, this.savedTopicName, savedDoc(this.panel, this.link))) {
@@ -1460,10 +1462,23 @@ export class TouchPanelApp {
       if (!(this.host && this.host.embedded)) return 'bus';
     }
     if (!this.host) return '';
-    const how = this.host.save(panelBlock(this.panel), panelMeta(this.panel));
+    // In the CAD: the block back to the drawing. Standalone: Save Model, the .json AND its .ifc twin, both or neither.
+    const S = window.APKSoftapp;
+    const block = panelBlock(this.panel);
+    const meta = panelMeta(this.panel);
     const tag = document.getElementById('block-tag');
-    if (tag && how) tag.textContent = how === 'host' ? 'SAVED TO THE CAD' : 'DOWNLOADED .JSON';
-    return how;
+    if (this.host.embedded || !S || typeof S.saveModel !== 'function') {
+      const how = this.host.save(block, meta);
+      if (tag && how) tag.textContent = how === 'host' ? 'SAVED TO THE CAD' : 'DOWNLOADED .JSON';
+      return how;
+    }
+    const r = await S.saveModel(block, {
+      name: meta.filename,
+      toIfc: (b) => touchPanelToIfc(b, { name: meta.filename, presets: SCREEN_PRESETS }),
+    });
+    if (r.ok && tag) tag.textContent = 'SAVED .JSON + .IFC';
+    if (!r.ok && !r.cancelled) S.showProblem(r.problem || 'save_failed', { onRetry: () => this.saveBlock() });
+    return r.ok ? 'model' : '';
   }
 
   // ------------------------------------------------------------------ pages
@@ -2084,35 +2099,43 @@ export class TouchPanelApp {
     }
   }
 
-  promptOpen() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      const again = () => this.promptOpen();
-      reader.onload = (re) => {
-        try {
-          const parsed = JSON.parse(re.target.result);
-          // A Gui_Frames frame (an exported panel, or any library frame) opens
-          // as a panel; anything else is this editor's own block.
-          const fromFrame = isFrame(parsed) ? frameToPanel(parsed) : null;
-          this.handleBlockLoaded(fromFrame || parsed, { title: file.name });
-        } catch (err) {
-          const S = window.APKSoftapp;
-          if (!S) { alert('Invalid JSON touch panel block'); return; }
-          S.showProblem(err instanceof SyntaxError ? 'bad_json' : err, {
-            subject: file.name, detail: err.message, onRetry: again,
-            fix: ['Open a .json saved by this editor (Save & Return when standalone downloads one).'],
-          });
-        }
-      };
-      reader.onerror = () => window.APKSoftapp?.showProblem('file_unreadable', { subject: file.name, detail: reader.error && reader.error.message, onRetry: again });
-      reader.readAsText(file);
-    };
-    input.click();
+  /** Open: this editor's block .json, a Gui_Frames frame, or the .ifc twin (APKSoftapp.openModel). The .ifc
+      carries the panel but not its layout (that stays the .json's): it opens the panel with no controls and
+      says which .json holds them. */
+  async promptOpen() {
+    const S = window.APKSoftapp;
+    let fromIfc = null;
+    const o = await S.openModel({
+      fromIfc: (text) => { fromIfc = touchPanelFromIfc(text); return fromIfc.block; },
+      // A Gui_Frames frame (an exported panel, or any library frame) opens as a panel; anything else is this editor's own block.
+      fromJson: (parsed) => (isFrame(parsed) ? frameToPanel(parsed) : null) || parsed,
+    });
+    if (!o.ok) {
+      if (!o.cancelled && o.problem) {
+        S.showProblem(o.problem, {
+          onRetry: () => this.promptOpen(),
+          fix: ['Open a .json saved by this editor, its .ifc twin, or a Gui_Frames frame (Save Model when standalone writes the .json and the .ifc).'],
+        });
+      }
+      return;
+    }
+    try {
+      if (!o.model || typeof o.model !== 'object') throw new TypeError('this file holds no touch panel block');
+      this.panel.deviceId = o.model.deviceId || this.panel.deviceId;
+      this.handleBlockLoaded(o.model, { title: o.name });
+    } catch (err) {
+      S.showProblem('bad_input', {
+        subject: o.name, detail: err.message, onRetry: () => this.promptOpen(),
+        fix: ['Open a .json saved by this editor, its .ifc twin, or a Gui_Frames frame.'],
+      });
+      return;
+    }
+    const tag = document.getElementById('block-tag');
+    if (fromIfc && tag) {
+      tag.textContent = fromIfc.controls
+        ? `OPENED .IFC: ITS ${fromIfc.controls} CONTROLS ARE IN ${fromIfc.layout || 'THE .JSON TWIN'}`
+        : 'OPENED .IFC';
+    }
   }
 }
 

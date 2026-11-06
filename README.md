@@ -8,7 +8,7 @@ Design a touch panel on the real glass of a real panel, wire any control to anyt
 |---|---|
 | **Opens** | the OS shell (Design → Surfaces & Controls), or `index.html` standalone; `run.html` runs a panel |
 | **Reads** | the instrument library through WEB.OsApi (`/api/instrument/api`, `/api/devices`), the bench through DATABASE.server.BIM (`/api/bim/instances`), the widget library (`/FrontEnd/api/tree.json`), devices' presented panels on the bus |
-| **Writes** | a `touch_panel` block to the CAD (`cad.like.audio/host@1`), a downloaded `.json`, a Gui_Frames `.frame.json`, a device's saved panel retained on the bus |
+| **Writes** | a `touch_panel` block to the CAD (`cad.like.audio/host@1`), standalone the `.json` beside its `.ifc` twin (Save Model: the panel an IfcUnitaryControlElement CONTROLPANEL in its room, the layout by hash, `js/touchPanelIfc.js`), a Gui_Frames `.frame.json`, a device's saved panel retained on the bus |
 | **Build** | none — plain ES modules; `npm test` (node's own runner) |
 | **Ships** | baked into WEB.Frontend-Assets (`up-stack.sh WEB.Frontend-Assets`), served at `:8080/Softapps/EDITORS/EDITORS.TouchPanelBuilder/` |
 
