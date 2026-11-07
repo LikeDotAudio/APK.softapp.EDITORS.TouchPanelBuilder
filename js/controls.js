@@ -8,6 +8,16 @@
 
 const V = (name, fallback) => `var(--w-${name}, ${fallback})`;
 
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // What a control looks like — every field the schedule's style editor offers.
 export const STYLE_FIELDS = [
   { key: 'bg', label: 'Background', kind: 'color' },
@@ -404,30 +414,109 @@ export const CONTROL_DEFINITIONS = {
     type: 'vu',
     name: 'Needle VU Meter',
     icon: '◔',
-    w: 160,
-    h: 110,
+    w: 260,
+    h: 160,
     render(c) {
       const b = c.behavior || {};
-      const min = Number(b.min);
-      const max = Number(b.max);
       const numVal = parseFloat(String(c.value ?? b.default ?? '').replace(/^[^\d.+-]+/, ''));
-      let angle = -38;
-      if (Number.isFinite(numVal)) {
-        if (Number.isFinite(min) && Number.isFinite(max) && max > min) {
-          const frac = Math.max(0, Math.min(1, (numVal - min) / (max - min)));
-          angle = -38 + frac * 76;
+      const unit = b.unit || 'V';
+      
+      // Calculate 10X mantissa and scale decade
+      let mantissa = 0;
+      let scaleMultText = '×1';
+      
+      if (Number.isFinite(numVal) && numVal !== 0) {
+        const abs = Math.abs(numVal);
+        if (abs > 1e30) {
+          mantissa = 10;
+          scaleMultText = 'OVERLOAD';
         } else {
-          const frac = Math.max(0, Math.min(1, (numVal + 20) / 23));
-          angle = -38 + frac * 76;
+          const scaleExp = Math.floor(Math.log10(abs));
+          mantissa = abs / Math.pow(10, scaleExp);
+          if (scaleExp !== 0) {
+            scaleMultText = scaleExp === 1 ? '×10' : scaleExp === 2 ? '×100' : scaleExp === 3 ? '×1k' : scaleExp === 6 ? '×1M' : scaleExp === -3 ? '×1m' : `×10^${scaleExp}`;
+          }
+        }
+      } else if (numVal === 0) {
+        mantissa = 0;
+        scaleMultText = '×1';
+      }
+
+      // 10X Scale spans 0 to 10
+      const clampedMantissa = Math.max(0, Math.min(10, mantissa));
+      
+      const cx = 130;
+      const cy = 145;
+      const R = 96;
+      // View angle 76 deg, centered at 90 deg (standard analog VU geometry)
+      const startDeg = 128;
+      const sweepDeg = 76;
+      const angOf = (v) => (startDeg - (v / 10) * sweepDeg) * Math.PI / 180;
+      
+      const arcPath = (v1, v2) => {
+        const a1 = angOf(v1);
+        const a2 = angOf(v2);
+        const x1 = cx + R * Math.cos(a1);
+        const y1 = cy - R * Math.sin(a1);
+        const x2 = cx + R * Math.cos(a2);
+        const y2 = cy - R * Math.sin(a2);
+        return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${R} ${R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+      };
+      
+      const ticks = [];
+      for (let i = 0; i <= 10; i++) {
+        const rad = angOf(i);
+        const isMajor = i % 2 === 0;
+        const tickLen = isMajor ? 10 : 6;
+        const x1 = cx + R * Math.cos(rad);
+        const y1 = cy - R * Math.sin(rad);
+        const x2 = cx + (R - tickLen) * Math.cos(rad);
+        const y2 = cy - (R - tickLen) * Math.sin(rad);
+        const stroke = i >= 8.5 ? '#dc2626' : (i >= 7 ? '#d97706' : '#222');
+        ticks.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${isMajor ? 2 : 1}"/>`);
+        
+        if (i < 10) {
+          const subRad = angOf(i + 0.5);
+          const sx1 = cx + R * Math.cos(subRad);
+          const sy1 = cy - R * Math.sin(subRad);
+          const sx2 = cx + (R - 4) * Math.cos(subRad);
+          const sy2 = cy - (R - 4) * Math.sin(subRad);
+          ticks.push(`<line x1="${sx1.toFixed(1)}" y1="${sy1.toFixed(1)}" x2="${sx2.toFixed(1)}" y2="${sy2.toFixed(1)}" stroke="#444" stroke-width="0.75"/>`);
+        }
+
+        if (isMajor) {
+          const tx = cx + (R - 19) * Math.cos(rad);
+          const ty = cy - (R - 19) * Math.sin(rad);
+          ticks.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-family="system-ui, sans-serif" font-weight="700" fill="${stroke}">${i}</text>`);
         }
       }
+
+      const needleRot = -38 + (clampedMantissa / 10) * 76;
+      const needleLen = R + 4;
+      const displayVal = c.value !== undefined && c.value !== null && c.value !== '' ? c.value : '—';
+
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; overflow:hidden; ${box('#efe3bd', '#3b3325', '6px')}">
-          <div style="position:absolute; left:10%; right:10%; top:18%; height:120%; border-radius:50%; border-top:2px solid #222;"></div>
-          <div style="position:absolute; right:12%; top:18%; width:22%; height:30%; border-top:3px solid #c0392b; border-radius:0 60% 0 0;"></div>
-          <div style="position:absolute; left:50%; bottom:6%; width:2px; height:72%; background:${V('accent', '#111')}; transform-origin:bottom center; transform:rotate(${angle.toFixed(1)}deg); transition:transform 0.15s ease-out;"></div>
-          <span style="position:absolute; left:0; right:0; top:52%; text-align:center; font-family:serif; font-weight:700; font-size:${V('fs', '14px')}; color:${V('text', '#222')};">VU</span>
-          <span style="position:absolute; left:6px; bottom:4px; font-size:9px; color:${V('text', '#222')};">${c.label || ''}</span>
+          <svg viewBox="0 0 260 160" style="width:100%; height:100%; display:block;">
+            <defs>
+              <filter id="needle-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.4"/>
+              </filter>
+            </defs>
+            <path d="${arcPath(0, 7)}" fill="none" stroke="#222" stroke-width="2"/>
+            <path d="${arcPath(7, 8.5)}" fill="none" stroke="#d97706" stroke-width="2.5"/>
+            <path d="${arcPath(8.5, 10)}" fill="none" stroke="#dc2626" stroke-width="3.5"/>
+            ${ticks.join('')}
+            <text x="130" y="78" text-anchor="middle" font-family="serif" font-weight="700" font-size="14" fill="#222">VU</text>
+            <text x="130" y="94" text-anchor="middle" font-family="monospace" font-weight="700" font-size="10" fill="#475569">10X · ${esc(scaleMultText)} ${esc(unit)}</text>
+            <text x="14" y="148" font-size="10" font-weight="700" fill="#222">${esc(c.label || 'READING')}</text>
+            <text x="246" y="148" text-anchor="end" font-family="monospace" font-size="10" font-weight="700" fill="#222">${esc(displayVal)}</text>
+            <g style="transform-origin: ${cx}px ${cy}px; transform: rotate(${needleRot.toFixed(1)}deg); transition: transform 0.2s ease-out;">
+              <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - needleLen}" stroke="#111" stroke-width="2" stroke-linecap="round" filter="url(#needle-shadow)"/>
+            </g>
+            <circle cx="${cx}" cy="${cy}" r="11" fill="#1e222b" stroke="#3b3325" stroke-width="2"/>
+            <circle cx="${cx}" cy="${cy}" r="4" fill="#f59e0b"/>
+          </svg>
         </div>`;
     }
   },
@@ -478,41 +567,77 @@ export const CONTROL_DEFINITIONS = {
     type: 'selector',
     name: 'Rotary Selector',
     icon: '🎚',
-    w: 120,
-    h: 120,
+    w: 220,
+    h: 220,
     render(c) {
       const b = c.behavior || {};
-      const n = Math.max(2, Math.min(12, parseInt(b.positions, 10) || 6));
-      const values = b.values || [];
-      const labels = b.labels || values;
+      const values = b.values && b.values.length ? b.values : (Array.isArray(b.positions) ? b.positions : []);
+      const n = Math.max(2, Math.min(12, values.length || parseInt(b.positions, 10) || 6));
+      const effectiveValues = values.length ? values : Array.from({ length: n }, (_, i) => String(i + 1));
+      const labels = b.labels && b.labels.length ? b.labels : effectiveValues;
       const cur = String(c.value !== '—' && c.value != null ? c.value : b.default ?? '').trim();
       let idx = -1;
       if (cur) {
-        idx = values.findIndex(v => String(v).toUpperCase() === cur.toUpperCase());
+        idx = effectiveValues.findIndex(v => String(v).toUpperCase() === cur.toUpperCase());
         if (idx === -1) idx = labels.findIndex(l => String(l).toUpperCase() === cur.toUpperCase());
       }
       if (idx === -1 && b.default) {
         const d = String(b.default).toUpperCase();
-        idx = values.findIndex(v => String(v).toUpperCase() === d);
+        idx = effectiveValues.findIndex(v => String(v).toUpperCase() === d);
         if (idx === -1) idx = labels.findIndex(l => String(l).toUpperCase() === d);
       }
       if (idx === -1) idx = 0;
       const angle = n > 1 ? -135 + (270 / (n - 1)) * idx : 0;
-      const ticks = Array.from({ length: n }).map((_, i) => {
-        const a = -135 + (270 / (n - 1)) * i;
-        const active = i === idx;
-        const color = active ? V('accent', '#f59e0b') : V('text', '#94a3b8');
-        return `<div style="position:absolute; left:50%; top:50%; width:2px; height:46%; transform-origin:top center; transform:rotate(${a + 180}deg);"><div style="width:2px; height:7px; background:${color}; position:absolute; bottom:0;"></div></div>`;
+
+      const cx = 110;
+      const cy = 105;
+      const radius = 46;
+      const sweepAngle = 270;
+      const angleStep = n > 1 ? sweepAngle / (n - 1) : 0;
+
+      const ticksAndLabels = effectiveValues.map((v, i) => {
+        const posAngle = -135 + i * angleStep;
+        const rad = (90 - posAngle) * Math.PI / 180;
+        const isActive = i === idx;
+        const stroke = isActive ? '#f59e0b' : '#64748b';
+        const labelColor = isActive ? '#f59e0b' : '#94a3b8';
+        const fontWeight = isActive ? '700' : '500';
+
+        const x1 = cx + (radius + 4) * Math.cos(rad);
+        const y1 = cy - (radius + 4) * Math.sin(rad);
+        const x2 = cx + (radius + 12) * Math.cos(rad);
+        const y2 = cy - (radius + 12) * Math.sin(rad);
+
+        const lx = cx + (radius + 28) * Math.cos(rad);
+        const ly = cy - (radius + 28) * Math.sin(rad);
+
+        return `<g class="sel-pos" data-pos="${i}" data-v="${esc(v)}" style="cursor:pointer;">
+          <line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${isActive ? 2.5 : 1.5}" stroke-linecap="round"/>
+          <text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="9" font-family="system-ui, sans-serif" font-weight="${fontWeight}" fill="${labelColor}">${esc(labels[i] || v)}</text>
+        </g>`;
       }).join('');
+
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; ${box('transparent', 'transparent', '6px')}">
-          ${ticks}
-          ${c.style?.capShape
-            ? `<div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(${angle}deg); transition:transform 0.2s ease-out;">${knobCap(c.style.capShape, c.style.pointer)}</div>`
-            : `<div style="position:absolute; left:22%; top:22%; width:56%; height:56%; border-radius:50%; background:${V('cap', '#2a2d33')}; border:2px solid ${V('border', '#52525b')}; box-shadow:0 3px 8px rgba(0,0,0,0.6); transform:rotate(${angle}deg); transition:transform 0.2s ease-out;">
-            <div style="position:absolute; left:calc(50% - 2px); top:4px; width:4px; height:40%; background:${V('accent', '#f59e0b')}; border-radius:2px;"></div>
-          </div>`}
-          <span style="position:absolute; left:0; right:0; bottom:0; text-align:center; font-size:${V('fs', '10px')}; font-weight:${V('fw', '600')}; color:${V('text', '#94a3b8')};">${c.label || 'SOURCE'}</span>
+          <svg viewBox="0 0 220 220" style="width:100%; height:100%; display:block;">
+            <defs>
+              <radialGradient id="knob-face" cx="40%" cy="35%" r="60%">
+                <stop offset="0%" stop-color="#3d434f"/>
+                <stop offset="60%" stop-color="#242830"/>
+                <stop offset="100%" stop-color="#14171d"/>
+              </radialGradient>
+              <filter id="knob-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.6"/>
+              </filter>
+            </defs>
+            ${ticksAndLabels}
+            <g style="transform-origin: ${cx}px ${cy}px; transform: rotate(${angle}deg); transition: transform 0.2s ease-out;">
+              <circle cx="${cx}" cy="${cy}" r="${radius}" fill="url(#knob-face)" stroke="#525969" stroke-width="2" filter="url(#knob-shadow)"/>
+              <circle cx="${cx}" cy="${cy}" r="${radius - 6}" fill="none" stroke="#16181d" stroke-width="1.5"/>
+              <line x1="${cx}" y1="${cy - 8}" x2="${cx}" y2="${cy - radius + 2}" stroke="#f59e0b" stroke-width="3.5" stroke-linecap="round"/>
+            </g>
+            <text x="${cx}" y="208" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="0.05em" font-family="system-ui, sans-serif" fill="#94a3b8">${esc(c.label || 'SELECTOR')}</text>
+          </svg>
         </div>`;
     }
   },

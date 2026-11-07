@@ -146,4 +146,23 @@ test('rotary selector and needle VU meter rotate to match current value and doma
   // Needle VU meter: min=0, max=10, value=1.707263 -> ~ -25.0deg
   const vu17 = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '+1.707263', behavior: { min: 0, max: 10 } });
   assert.match(vu17, /rotate\(-25\.0deg\)/);
+
+  // Radial labels engraved around selector knob
+  assert.match(r0, /DC VOLTS/);
+  assert.match(r0, /AC VOLTS/);
+  assert.match(r0, /RESISTANCE/);
+  assert.match(r0, /FREQUENCY/);
+  assert.match(r0, /CONTINUITY/);
+  assert.match(r0, /class="sel-pos" data-pos="0" data-v="VOLT"/);
+  assert.match(r0, /class="sel-pos" data-pos="3" data-v="FREQ"/);
+
+  // Needle VU meter: 10X scale, engineering notation mantissa and multiplier
+  const vuEng = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '+1.70726380E+02', behavior: { unit: 'Hz' } });
+  assert.match(vuEng, /10X · ×100 Hz/);
+  assert.match(vuEng, />0<\/text>/);
+  assert.match(vuEng, />10<\/text>/);
+
+  // Identity / IDN readback mapping
+  assert.equal(readbackOf({ address: 'Reading/Read_IDN' }, 'APK.audio/System/Protocols/visa/DevttyUSB1/Write'),
+    'APK.audio/System/Protocols/visa/DevttyUSB1/Reading/Read_IDN');
 });

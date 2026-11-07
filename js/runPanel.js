@@ -120,6 +120,9 @@ export function readingText(text, unit = '') {
 export function readbackOf(widget, writeTopic = '') {
   const own = String((widget && widget.address) || '');
   if (own.startsWith('APK.audio/') && !/\/(Write|Control)$/.test(own) && !/[#+]/.test(own)) return own;
+  if (own.startsWith('Reading/') && writeTopic && /\/Write$/.test(writeTopic)) {
+    return `${writeTopic.slice(0, -'/Write'.length)}/${own}`;
+  }
   const h = handlerFor(widget, writeTopic);
   const target = h && String(h.target || '');
   if (!h || !/\/Write$/.test(target) || !/^(get|nab)$/i.test(String(h.komand_type || ''))) return '';

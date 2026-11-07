@@ -82,7 +82,11 @@ export function touchPanelToIfc(block, { name, presets = [] } = {}) {
   const app = W.add('IFCAPPLICATION', org, '1', 'APK.audio touch panel builder', 'EDITORS.TouchPanelBuilder');
   const oh = W.add('IFCOWNERHISTORY', po, app, null, null, null, null, null, 0);
   const mm = W.add('IFCSIUNIT', { kind: 'derived' }, enumv('LENGTHUNIT'), enumv('MILLI'), enumv('METRE'));
-  const units = W.add('IFCUNITASSIGNMENT', [mm]);
+  const volt = W.add('IFCSIUNIT', { kind: 'derived' }, enumv('ELECTRICVOLTAGEUNIT'), null, enumv('VOLT'));
+  const amp = W.add('IFCSIUNIT', { kind: 'derived' }, enumv('ELECTRICCURRENTUNIT'), null, enumv('AMPERE'));
+  const hz = W.add('IFCSIUNIT', { kind: 'derived' }, enumv('FREQUENCYUNIT'), null, enumv('HERTZ'));
+  const ohm = W.add('IFCSIUNIT', { kind: 'derived' }, enumv('ELECTRICRESISTANCEUNIT'), null, enumv('OHM'));
+  const units = W.add('IFCUNITASSIGNMENT', [mm, volt, amp, hz, ohm]);
   const origin = W.add('IFCAXIS2PLACEMENT3D', W.add('IFCCARTESIANPOINT', [real(0), real(0), real(0)]), null, null);
   const ctx = W.add('IFCGEOMETRICREPRESENTATIONCONTEXT', null, 'Model', 3, real(1e-5), origin, null);
   const project = W.add('IFCPROJECT', P, oh, str(b.name) || stem, 'Touch panel builder: one touch panel in its room', null, null, null, [ctx], units);

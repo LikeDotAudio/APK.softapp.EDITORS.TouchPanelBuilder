@@ -186,6 +186,27 @@ function listen() {
       if (traces.length) { w.trace = traces; draw(w); }
     });
   }
+  // Instrument IDN readback from KOMAND Nab/Get
+  if (state.write) {
+    const idnTopic = `${state.write.slice(0, -'/Write'.length)}/Reading/Read_IDN`;
+    link.subscribe(idnTopic, (_t, text) => {
+      const idn = readingText(text);
+      if (idn) {
+        const idnEl = $('run-idn');
+        if (idnEl) {
+          idnEl.hidden = false;
+          idnEl.textContent = idn;
+          idnEl.title = `Device IDN: ${idn}`;
+        }
+        for (const w of state.panel.widgets) {
+          if (/identity|idn|make\s*·\s*model/i.test(w.label) || w.komand?.command === 'Read_IDN') {
+            w.value = idn;
+            draw(w);
+          }
+        }
+      }
+    });
+  }
 }
 
 /* ---------------------------------------------------------------- touching */
@@ -307,6 +328,72 @@ function attach(el, w) {
     });
     return;
   }
+  if (w.type === 'selector') {
+    const b = w.behavior || {};
+    const values = b.values && b.values.length ? b.values : (Array.isArray(b.positions) ? b.positions : []);
+    const n = Math.max(2, Math.min(12, values.length || parseInt(b.positions, 10) || 6));
+    const effectiveValues = values.length ? values : Array.from({ length: n }, (_, i) => String(i + 1));
+    const totalPos = effectiveValues.length;
+
+    const selectIndex = (idx) => {
+      const val = effectiveValues[idx] !== undefined ? effectiveValues[idx] : idx;
+      if (fire(w, val)) {
+        w.value = val;
+        draw(w);
+        const myTopic = readbackOf(w, state.write) || w.address;
+        for (const dep of state.panel.widgets) {
+          if (dep.behavior?.domainFrom?.komand_listen_topic === myTopic) {
+            applyDomainFrom(dep, val);
+          }
+        }
+      }
+    };
+
+    el.addEventListener('click', (e) => {
+      const posEl = e.target.closest('.sel-pos');
+      if (posEl && posEl.dataset.v !== undefined) {
+        const val = posEl.dataset.v;
+        const idx = effectiveValues.findIndex(v => String(v) === String(val));
+        selectIndex(idx !== -1 ? idx : parseInt(posEl.dataset.pos, 10) || 0);
+        return;
+      }
+
+      // If clicked on knob body / dial background, find closest radial angle
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + (rect.height * 105 / 220);
+      const dx = e.clientX - cx;
+      const dy = e.clientY - cy;
+      if (Math.hypot(dx, dy) > 15) {
+        let angle = Math.atan2(-dy, dx) * (180 / Math.PI);
+        if (angle < 0) angle += 360;
+        const sweepAngle = 270;
+        const angleStep = n > 1 ? sweepAngle / (n - 1) : 0;
+        let closestIdx = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < n; i++) {
+          let targetAng = 225 - i * angleStep;
+          while (targetAng < 0) targetAng += 360;
+          while (targetAng >= 360) targetAng -= 360;
+          let diff = Math.abs(angle - targetAng);
+          if (diff > 180) diff = 360 - diff;
+          if (diff < minDiff) { minDiff = diff; closestIdx = i; }
+        }
+        selectIndex(closestIdx);
+      }
+    });
+
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const cur = String(w.value !== '—' && w.value != null ? w.value : b.default ?? '').trim().toUpperCase();
+      let curIdx = effectiveValues.findIndex(v => String(v).toUpperCase() === cur);
+      if (curIdx === -1) curIdx = 0;
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const nextIdx = Math.max(0, Math.min(totalPos - 1, curIdx + dir));
+      if (nextIdx !== curIdx) selectIndex(nextIdx);
+    }, { passive: false });
+    return;
+  }
   el.addEventListener('click', () => (kind === 'text' ? textPop : kind === 'choose' ? choosePop : kind === 'args' ? argsPop : numberPop)(el, w));
 }
 
@@ -404,6 +491,20 @@ async function start() {
   document.title = `${$('run-name').textContent} · Touch Panel`;
   $('run-from').textContent = `from ${panel.placement}`;
   const f = (box && box.fields) || {};
+  const rawIdn = f.raw_idn;
+  if (rawIdn) {
+    const idnEl = $('run-idn');
+    if (idnEl) {
+      idnEl.hidden = false;
+      idnEl.textContent = rawIdn;
+      idnEl.title = `Device IDN: ${rawIdn}`;
+    }
+    for (const w of state.panel.widgets) {
+      if (/identity|idn|make\s*·\s*model/i.test(w.label) || w.komand?.command === 'Read_IDN') {
+        w.value = rawIdn;
+      }
+    }
+  }
   const unreachable = String(f.reachable) === '0' || f.status === 'stale';
   if (box && box.found && unreachable) pill('box-pill', `UNREACHABLE · last seen ${box.verified_age_s ?? '?'} s ago${f.error ? ' · ' + f.error : ''}`, 'dead');
   else if (box && box.found) pill('box-pill', `ON THE BUS · ${box.verified_age_s ?? '?'} s`, 'good');

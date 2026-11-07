@@ -57,13 +57,14 @@ const FRAME_TO_CONTROL = {
   _MDP: 'mdp',
   _CMDP: 'cmdp',
   _HighVisButton: 'tile',
+  _GuiTrendChart: 'trace',
 };
 const CONTAINERS = new Set(['OcaBin', 'OcaBlock']);
 
 /* Sizes on a 1280 × 800 glass; a horizontal fader lies down. */
 const SIZE = {
   knob: [90, 100], fader: [70, 220], faderH: [240, 60], button: [130, 60],
-  selector: [130, 130], meter: [45, 220], vu: [160, 110], readout: [170, 50],
+  selector: [220, 220], meter: [45, 220], vu: [260, 160], readout: [170, 50],
   rig: [230, 0], nab: [230, 0],
   ltp: [70, 220], mdp: [180, 180], cmdp: [220, 220], tile: [140, 90],
 };
@@ -309,7 +310,7 @@ export function panelFromPresented(doc, opts = {}) {
         label: fieldLabel(key, field).toUpperCase(),
         x: 0, y: 0, w, h,
         page: '',
-        address: field.komand_listen_topic || (field.device_state && field.topic) || field.komand_handler?.target || '',
+        address: field.komand_listen_topic || (field.device_state && field.topic) || field.komand_handler?.target || (field.komand_readout || /identity/i.test(key) ? 'Reading/Read_IDN' : ''),
         channel: 1,
         bindings: [],
       };

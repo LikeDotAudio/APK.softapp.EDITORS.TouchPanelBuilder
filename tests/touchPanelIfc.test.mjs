@@ -70,6 +70,9 @@ test('the panel: an IfcUnitaryControlElement CONTROLPANEL in its room, typed by 
   assert.equal(of(f, 'IFCRELASSOCIATESDOCUMENT')[0].args[4][0].id, tp.id);
   assert.equal(of(f, 'IFCRELCONNECTSPORTS').length, 0, 'a binding is a bus variable, not a port');
   assert.doesNotMatch(text, /Instruments\/x\/volume/, 'the layout never becomes IFC');
+  assert.match(text, /ELECTRICVOLTAGEUNIT.*VOLT/);
+  assert.match(text, /FREQUENCYUNIT.*HERTZ/);
+  assert.match(text, /ELECTRICRESISTANCEUNIT.*OHM/);
 });
 
 test('the layout hash follows the controls, not the name, the room or the key order', () => {
