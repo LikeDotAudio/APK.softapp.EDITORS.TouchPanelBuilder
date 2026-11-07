@@ -21,7 +21,7 @@ import { ControlLibrary, modelKey } from './library.js';
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(new URL('../config/discovered.json', import.meta.url).href) : Promise.resolve({}));
 import {
-  controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, brokerFor,
+  controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
 } from './runPanel.js';
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
 import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from './tracePanel.js';
@@ -142,6 +142,19 @@ function fire(w, value, args = null) {
   return true;
 }
 
+function applyDomainFrom(w, val) {
+  const df = w.behavior?.domainFrom;
+  if (!df || !df.cases) return;
+  const key = String(val ?? df.default ?? '').toUpperCase().trim();
+  const hit = df.cases[key] || Object.entries(df.cases).find(([k]) => k.toUpperCase() === key)?.[1];
+  if (hit) {
+    if (hit.min !== undefined) w.behavior.min = Number(hit.min);
+    if (hit.max !== undefined) w.behavior.max = Number(hit.max);
+    if (hit.units !== undefined) w.behavior.unit = String(hit.units);
+    draw(w);
+  }
+}
+
 function listen() {
   const link = state.bus;
   if (!link) return;
@@ -150,8 +163,18 @@ function listen() {
       // A waveform or spectrum answer is a series: drawn as a trace, not as text (tracePanel.js).
       const series = seriesOf(text);
       for (const w of widgets) {
-        if (series) { w.type = 'trace'; w.trace = [{ source: w.label, points: toBytes(series) }]; }
-        else w.value = readingText(text, w.behavior && w.behavior.unit);
+        if (series) {
+          w.type = 'trace';
+          w.trace = [{ source: w.label, points: toBytes(series) }];
+        } else {
+          if (w.behavior?.domainFrom?.komand_listen_topic === _t) {
+            applyDomainFrom(w, readingText(text));
+          }
+          const rb = readbackOf(w, state.write);
+          if (rb === _t || (!rb && w.address === _t)) {
+            w.value = readingText(text, w.behavior && w.behavior.unit);
+          }
+        }
         draw(w);
       }
     });
@@ -213,11 +236,25 @@ function numberPop(el, w) {
 function choosePop(el, w) {
   const b = w.behavior || {};
   const labels = b.labels || b.values;
-  const pop = popAt(el, `<h4>${esc(w.label)}</h4><div class="row">${b.values.map((v, i) =>
-    `<button data-v="${esc(v)}">${esc(labels[i] || v)}</button>`).join('')}</div>
+  const cur = String(w.value !== '—' && w.value != null ? w.value : b.default ?? '').trim().toUpperCase();
+  const pop = popAt(el, `<h4>${esc(w.label)}</h4><div class="row">${b.values.map((v, i) => {
+    const isSelected = String(v).toUpperCase() === cur || String(labels[i] || '').toUpperCase() === cur;
+    return `<button data-v="${esc(v)}" class="${isSelected ? 'go' : ''}">${esc(labels[i] || v)}</button>`;
+  }).join('')}</div>
     <div class="row"><button data-close>Cancel</button></div>`);
   pop.querySelectorAll('[data-v]').forEach(btn => btn.addEventListener('click', () => {
-    if (fire(w, btn.dataset.v)) { w.value = btn.textContent; draw(w); closePop(); }
+    const val = btn.dataset.v;
+    if (fire(w, val)) {
+      w.value = val;
+      draw(w);
+      const myTopic = readbackOf(w, state.write) || w.address;
+      for (const dep of state.panel.widgets) {
+        if (dep.behavior?.domainFrom?.komand_listen_topic === myTopic) {
+          applyDomainFrom(dep, val);
+        }
+      }
+      closePop();
+    }
   }));
 }
 
@@ -296,6 +333,11 @@ function draw(w) {
 
 function render() {
   const p = state.panel;
+  for (const w of p.widgets) {
+    if (w.behavior?.domainFrom?.default) {
+      applyDomainFrom(w, w.behavior.domainFrom.default);
+    }
+  }
   const tabs = $('run-tabs');
   tabs.innerHTML = '';
   for (const pg of p.pages) {

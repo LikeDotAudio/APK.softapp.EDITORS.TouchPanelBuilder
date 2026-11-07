@@ -129,10 +129,12 @@ function knobCap(shape, pointer = 'line') {
 }
 
 // The fader's cap: the part of a console you recognise first.
-function faderThumb(kind, horiz) {
+function faderThumb(kind, horiz, frac = 0.3) {
   const cap = V('cap', '#475569');
   const a = V('accent', '#94a3b8');
-  const pos = horiz ? 'left:60%; top:50%; transform:translate(-50%,-50%) rotate(90deg);' : 'bottom:30%; left:50%; transform:translateX(-50%);';
+  const pct = (10 + Math.max(0, Math.min(1, frac)) * 80).toFixed(1);
+  const pos = horiz ? `left:${pct}%; top:50%; transform:translate(-50%,-50%) rotate(90deg); transition:left 0.15s ease-out;`
+                    : `bottom:${pct}%; left:50%; transform:translateX(-50%); transition:bottom 0.15s ease-out;`;
   const at = (w, h, extra) => `<div style="position:absolute; ${pos} width:${w}px; height:${h}px; ${extra}"></div>`;
   switch (kind) {
     case 'square': return at(24, 24, `background:${cap}; border-radius:2px; border:1px solid #111; box-shadow:0 3px 5px rgba(0,0,0,0.6), inset 0 -10px 0 rgba(0,0,0,0.15); background-image:linear-gradient(${a},${a}); background-size:100% 2px; background-repeat:no-repeat; background-position:center;`);
@@ -218,11 +220,17 @@ export const CONTROL_DEFINITIONS = {
     h: 180,
     render(c) {
       const horiz = c.behavior?.orientation === 'horizontal';
+      const b = c.behavior || {};
+      const min = Number(b.min);
+      const max = Number(b.max);
+      const numVal = parseFloat(String(c.value ?? b.default ?? '').replace(/^[^\d.+-]+/, ''));
+      const frac = (Number.isFinite(numVal) && Number.isFinite(min) && Number.isFinite(max) && max > min)
+        ? Math.max(0, Math.min(1, (numVal - min) / (max - min))) : (c.value != null && c.value !== '—' ? 0.5 : 0.3);
       const track = horiz
         ? `<div style="height:6px; width:80%; background:#0f1115; border-radius:3px; position:relative;">
-            ${faderThumb(c.style?.faderCap, true)}</div>`
+            ${faderThumb(c.style?.faderCap, true, frac)}</div>`
         : `<div style="width:6px; flex:1; max-height:120px; background:#0f1115; border-radius:3px; position:relative;">
-            ${faderThumb(c.style?.faderCap, false)}</div>`;
+            ${faderThumb(c.style?.faderCap, false, frac)}</div>`;
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px; padding:8px 0; ${box('#181b22', '#333948', '6px')}">
           <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '400')}; color:${V('text', '#94a3b8')};">${c.label || 'LEVEL'}</span>
@@ -238,10 +246,20 @@ export const CONTROL_DEFINITIONS = {
     w: 80,
     h: 90,
     render(c) {
+      const b = c.behavior || {};
+      const min = Number(b.min);
+      const max = Number(b.max);
+      const numVal = parseFloat(String(c.value ?? b.default ?? '').replace(/^[^\d.+-]+/, ''));
+      const frac = (Number.isFinite(numVal) && Number.isFinite(min) && Number.isFinite(max) && max > min)
+        ? Math.max(0, Math.min(1, (numVal - min) / (max - min))) : 0.66;
+      const deg = Math.round(frac * 270);
+      const angle = -135 + deg;
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; ${box('transparent', 'transparent', '6px')}">
-          <div style="width:50px; height:50px; border-radius:50%; background:conic-gradient(${V('accent', '#38bdf8')} 0deg 240deg, #1e293b 240deg 360deg); display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.6);">
-            ${knobCap(c.style?.capShape, c.style?.pointer)}
+          <div style="width:50px; height:50px; border-radius:50%; background:conic-gradient(${V('accent', '#38bdf8')} 0deg ${deg}deg, #1e293b ${deg}deg 360deg); display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.6);">
+            <div style="transform:rotate(${angle}deg); transition:transform 0.15s ease-out; display:flex; align-items:center; justify-content:center;">
+              ${knobCap(c.style?.capShape, c.style?.pointer)}
+            </div>
           </div>
           <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '400')}; color:${V('text', '#94a3b8')};">${c.label || 'GAIN'}</span>
         </div>`;
@@ -265,13 +283,20 @@ export const CONTROL_DEFINITIONS = {
     w: 40,
     h: 180,
     render(c) {
+      const b = c.behavior || {};
+      const min = Number(b.min);
+      const max = Number(b.max);
+      const numVal = parseFloat(String(c.value ?? b.default ?? '').replace(/^[^\d.+-]+/, ''));
+      const frac = (Number.isFinite(numVal) && Number.isFinite(min) && Number.isFinite(max) && max > min)
+        ? Math.max(0, Math.min(1, (numVal - min) / (max - min))) : (c.value != null && c.value !== '—' ? 0.5 : 0);
+      const lit = Math.round(frac * 16);
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; ${box('#13151b', '#2e3442', '4px')} padding:6px; display:flex; flex-direction:column; justify-content:space-between; align-items:center;">
           <div style="width:100%; flex:1; display:flex; flex-direction:column-reverse; gap:2px;">
             ${Array.from({ length: 16 }).map((_, i) => {
               const color = i > 13 ? '#ef4444' : i > 10 ? '#f59e0b' : V('accent', '#10b981');
-              const opacity = i < 9 ? '0.9' : '0.2';
-              return `<div style="height:6px; background:${color}; opacity:${opacity}; border-radius:1px;"></div>`;
+              const opacity = i < lit ? '0.9' : '0.2';
+              return `<div style="height:6px; background:${color}; opacity:${opacity}; border-radius:1px; transition:opacity 0.1s ease-out;"></div>`;
             }).join('')}
           </div>
           <span style="font-size:${V('fs', '8px')}; font-weight:${V('fw', '400')}; color:${V('text', '#64748b')}; margin-top:4px;">${c.label || 'CH 1'}</span>
@@ -382,11 +407,25 @@ export const CONTROL_DEFINITIONS = {
     w: 160,
     h: 110,
     render(c) {
+      const b = c.behavior || {};
+      const min = Number(b.min);
+      const max = Number(b.max);
+      const numVal = parseFloat(String(c.value ?? b.default ?? '').replace(/^[^\d.+-]+/, ''));
+      let angle = -38;
+      if (Number.isFinite(numVal)) {
+        if (Number.isFinite(min) && Number.isFinite(max) && max > min) {
+          const frac = Math.max(0, Math.min(1, (numVal - min) / (max - min)));
+          angle = -38 + frac * 76;
+        } else {
+          const frac = Math.max(0, Math.min(1, (numVal + 20) / 23));
+          angle = -38 + frac * 76;
+        }
+      }
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; overflow:hidden; ${box('#efe3bd', '#3b3325', '6px')}">
           <div style="position:absolute; left:10%; right:10%; top:18%; height:120%; border-radius:50%; border-top:2px solid #222;"></div>
           <div style="position:absolute; right:12%; top:18%; width:22%; height:30%; border-top:3px solid #c0392b; border-radius:0 60% 0 0;"></div>
-          <div style="position:absolute; left:50%; bottom:6%; width:2px; height:72%; background:${V('accent', '#111')}; transform-origin:bottom center; transform:rotate(18deg);"></div>
+          <div style="position:absolute; left:50%; bottom:6%; width:2px; height:72%; background:${V('accent', '#111')}; transform-origin:bottom center; transform:rotate(${angle.toFixed(1)}deg); transition:transform 0.15s ease-out;"></div>
           <span style="position:absolute; left:0; right:0; top:52%; text-align:center; font-family:serif; font-weight:700; font-size:${V('fs', '14px')}; color:${V('text', '#222')};">VU</span>
           <span style="position:absolute; left:6px; bottom:4px; font-size:9px; color:${V('text', '#222')};">${c.label || ''}</span>
         </div>`;
@@ -442,17 +481,35 @@ export const CONTROL_DEFINITIONS = {
     w: 120,
     h: 120,
     render(c) {
-      const n = Math.max(2, Math.min(12, parseInt(c.behavior?.positions, 10) || 6));
+      const b = c.behavior || {};
+      const n = Math.max(2, Math.min(12, parseInt(b.positions, 10) || 6));
+      const values = b.values || [];
+      const labels = b.labels || values;
+      const cur = String(c.value !== '—' && c.value != null ? c.value : b.default ?? '').trim();
+      let idx = -1;
+      if (cur) {
+        idx = values.findIndex(v => String(v).toUpperCase() === cur.toUpperCase());
+        if (idx === -1) idx = labels.findIndex(l => String(l).toUpperCase() === cur.toUpperCase());
+      }
+      if (idx === -1 && b.default) {
+        const d = String(b.default).toUpperCase();
+        idx = values.findIndex(v => String(v).toUpperCase() === d);
+        if (idx === -1) idx = labels.findIndex(l => String(l).toUpperCase() === d);
+      }
+      if (idx === -1) idx = 0;
+      const angle = n > 1 ? -135 + (270 / (n - 1)) * idx : 0;
       const ticks = Array.from({ length: n }).map((_, i) => {
         const a = -135 + (270 / (n - 1)) * i;
-        return `<div style="position:absolute; left:50%; top:50%; width:2px; height:46%; transform-origin:top center; transform:rotate(${a + 180}deg);"><div style="width:2px; height:7px; background:${V('text', '#94a3b8')}; position:absolute; bottom:0;"></div></div>`;
+        const active = i === idx;
+        const color = active ? V('accent', '#f59e0b') : V('text', '#94a3b8');
+        return `<div style="position:absolute; left:50%; top:50%; width:2px; height:46%; transform-origin:top center; transform:rotate(${a + 180}deg);"><div style="width:2px; height:7px; background:${color}; position:absolute; bottom:0;"></div></div>`;
       }).join('');
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; ${box('transparent', 'transparent', '6px')}">
           ${ticks}
           ${c.style?.capShape
-            ? `<div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(-30deg);">${knobCap(c.style.capShape, c.style.pointer)}</div>`
-            : `<div style="position:absolute; left:22%; top:22%; width:56%; height:56%; border-radius:50%; background:${V('cap', '#2a2d33')}; border:2px solid ${V('border', '#52525b')}; box-shadow:0 3px 8px rgba(0,0,0,0.6); transform:rotate(-30deg);">
+            ? `<div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(${angle}deg); transition:transform 0.2s ease-out;">${knobCap(c.style.capShape, c.style.pointer)}</div>`
+            : `<div style="position:absolute; left:22%; top:22%; width:56%; height:56%; border-radius:50%; background:${V('cap', '#2a2d33')}; border:2px solid ${V('border', '#52525b')}; box-shadow:0 3px 8px rgba(0,0,0,0.6); transform:rotate(${angle}deg); transition:transform 0.2s ease-out;">
             <div style="position:absolute; left:calc(50% - 2px); top:4px; width:4px; height:40%; background:${V('accent', '#f59e0b')}; border-radius:2px;"></div>
           </div>`}
           <span style="position:absolute; left:0; right:0; bottom:0; text-align:center; font-size:${V('fs', '10px')}; font-weight:${V('fw', '600')}; color:${V('text', '#94a3b8')};">${c.label || 'SOURCE'}</span>

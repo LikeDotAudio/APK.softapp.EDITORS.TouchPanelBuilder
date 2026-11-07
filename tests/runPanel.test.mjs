@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
 } from '../js/runPanel.js';
+import { CONTROL_DEFINITIONS } from '../js/controls.js';
 
 const gui = (path) => `APK.audio/Gui/${path.join('/')}`;
 const WRITE = 'APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Write';
@@ -61,6 +62,8 @@ test('a typed value stays inside the control range', () => {
 
 test('readings are shown short and unwrapped', () => {
   assert.equal(readingText('{"value": 1.5}', 'kHz'), '1.5 kHz');
+  assert.equal(readingText('{"value": "+1.707263"}', 'V'), '+1.707263 V');
+  assert.equal(readingText('+42', 'V'), '+42 V');
   assert.equal(readingText('ON'), 'ON');
   assert.equal(readingText('42', 'V'), '42 V');
   assert.equal(readingText(''), '');
@@ -107,4 +110,40 @@ test('a direct control (a Cast verb) is one live {value} at the device\'s own to
   assert.deepEqual(directMessages({}, true), []);
   assert.equal(readbackOf({ address: 'APK.audio/System/Protocols/chromecast/Device/Speaker/G/player_state' }),
     'APK.audio/System/Protocols/chromecast/Device/Speaker/G/player_state');
+});
+
+test('rotary selector and needle VU meter rotate to match current value and domain', () => {
+  const sel = {
+    type: 'selector',
+    label: 'MEASUREMENT',
+    behavior: {
+      positions: 5,
+      values: ['VOLT', 'VOLT:AC', 'RES', 'FREQ', 'CONT'],
+      labels: ['DC VOLTS', 'AC VOLTS', 'RESISTANCE', 'FREQUENCY', 'CONTINUITY'],
+      default: 'VOLT',
+    },
+  };
+  // Default/first position: 0 -> -135deg
+  const r0 = CONTROL_DEFINITIONS.selector.render({ ...sel, value: 'VOLT' });
+  assert.match(r0, /rotate\(-135deg\)/);
+
+  // Third position (RES): index 2 -> 0deg
+  const r2 = CONTROL_DEFINITIONS.selector.render({ ...sel, value: 'RES' });
+  assert.match(r2, /rotate\(0deg\)/);
+
+  // Fourth position (FREQ): index 3 -> +67.5deg
+  const r3 = CONTROL_DEFINITIONS.selector.render({ ...sel, value: 'FREQUENCY' });
+  assert.match(r3, /rotate\(67.5deg\)/);
+
+  // Needle VU meter: min=0, max=10, value=0 -> -38.0deg
+  const vu0 = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '0', behavior: { min: 0, max: 10 } });
+  assert.match(vu0, /rotate\(-38\.0deg\)/);
+
+  // Needle VU meter: min=0, max=10, value=5 -> 0.0deg
+  const vu5 = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '5', behavior: { min: 0, max: 10 } });
+  assert.match(vu5, /rotate\(0\.0deg\)/);
+
+  // Needle VU meter: min=0, max=10, value=1.707263 -> ~ -25.0deg
+  const vu17 = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '+1.707263', behavior: { min: 0, max: 10 } });
+  assert.match(vu17, /rotate\(-25\.0deg\)/);
 });

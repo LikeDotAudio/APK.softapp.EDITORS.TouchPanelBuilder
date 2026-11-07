@@ -112,7 +112,7 @@ export function readingText(text, unit = '') {
   if (v && typeof v === 'object') v = JSON.stringify(v);
   let s = String(v);
   if (s.length > 24) s = `${s.slice(0, 23)}…`;
-  return unit && /^-?[\d.]+(e[-+]?\d+)?$/i.test(s) ? `${s} ${unit}` : s;
+  return unit && /^[-+]?[\d.]+(e[-+]?\d+)?$/i.test(s) ? `${s} ${unit}` : s;
 }
 
 /** Where a control's answer arrives: its own readback topic, else the one KOMAND
@@ -131,9 +131,16 @@ export function readbackTopics(widgets, writeTopic = '') {
   const map = new Map();
   for (const w of widgets || []) {
     const t = readbackOf(w, writeTopic);
-    if (!t) continue;
-    if (!map.has(t)) map.set(t, []);
-    map.get(t).push(w);
+    if (t) {
+      if (!map.has(t)) map.set(t, []);
+      if (!map.get(t).includes(w)) map.get(t).push(w);
+    }
+    const df = w.behavior?.domainFrom;
+    const dt = df?.komand_listen_topic;
+    if (dt && dt.startsWith('APK.audio/')) {
+      if (!map.has(dt)) map.set(dt, []);
+      if (!map.get(dt).includes(w)) map.get(dt).push(w);
+    }
   }
   return map;
 }

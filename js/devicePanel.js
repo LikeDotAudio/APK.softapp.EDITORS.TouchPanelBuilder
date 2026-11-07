@@ -155,6 +155,7 @@ export function behaviorOf(field, type) {
   if (type === 'button') b.mode = MOMENTARY.has(field.type) && !field.latching ? 'momentary' : 'toggle';
   if (type === 'readout') b.mode = 'display only';
   if (field.komand_listen_topic) b.feedback = field.komand_listen_topic;
+  if (field.komand_domain_from) b.domainFrom = field.komand_domain_from;
   if (type === 'fader' && /Horizontal/.test(field.type)) b.orientation = 'horizontal';
   if (type === 'selector' && Array.isArray(field.positions)) {
     b.positions = field.positions.length;
