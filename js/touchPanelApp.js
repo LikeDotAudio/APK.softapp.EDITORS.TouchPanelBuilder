@@ -17,7 +17,7 @@ import { cloneControl, isHold, HOLD_MS } from './copyControl.js';
 import { paletteOf, grabBag, paletteFilter, deviceIO } from './palettes.js';
 import { panelToFrame, frameToPanel } from './frameExport.js';
 import {
-  ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType,
+  ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType, sourceFeeds,
   humanLabel, bindingFor, matchesQuery,
   agoText, modelKeyForPart,
 } from './library.js';
@@ -1159,7 +1159,29 @@ export class TouchPanelApp {
       const wr = wEl.getBoundingClientRect();
       const sel = w.id === this.selectedWidgetId ? ' sel' : '';
 
+      // Several commands can each give this control its information: draw every
+      // one as a source feeding it from the left, one labelled feed per command.
+      const feeds = sourceFeeds(w.bindings);
+      const feedIds = new Set(feeds.map(b => b.id));
+      const cy = wr.top + wr.height / 2;
+      feeds.forEach((b, i) => {
+        const n = feeds.length;
+        const px = wr.left - 6;
+        const py = wr.top + (wr.height * (i + 1)) / (n + 1);
+        const fx = Math.max(base.left + 8, wr.left - 170);
+        const fy = cy + (i - (n - 1) / 2) * 20;
+        const d = this.curve(fx - base.left, fy - base.top, px - base.left, py - base.top);
+        const name = b.command.length > 24 ? `${b.command.slice(0, 23)}…` : b.command;
+        const tip = `${esc(b.model)} ${esc(b.command)}${b.scpi ? ` · ${esc(b.scpi)}` : ''} → ${esc(w.label)}\nSource ${i + 1} of ${n} · click to show · double-click to disconnect`;
+        paths.push(`<path class="wire feed${sel}" d="${d}"/>`);
+        paths.push(`<circle class="feed-src" cx="${(fx - base.left).toFixed(1)}" cy="${(fy - base.top).toFixed(1)}" r="3"/>`);
+        paths.push(`<circle class="feed-port" cx="${(px - base.left).toFixed(1)}" cy="${(py - base.top).toFixed(1)}" r="4.5"/>`);
+        paths.push(`<text class="feed-label" x="${(fx - base.left + 6).toFixed(1)}" y="${(fy - base.top - 4).toFixed(1)}" data-wid="${esc(w.id)}" data-bid="${esc(b.id)}">${esc(name)}<title>${tip}</title></text>`);
+        paths.push(`<path class="hit" d="${d}" data-wid="${esc(w.id)}" data-bid="${esc(b.id)}"><title>${tip}</title></path>`);
+      });
+
       for (const b of w.bindings) {
+        if (feedIds.has(b.id)) continue;
         let x1 = wr.right + 6;
         const y1 = wr.top + wr.height / 2;
         let x2;
@@ -1192,7 +1214,7 @@ export class TouchPanelApp {
     }
 
     svg.innerHTML = paths.join('');
-    svg.querySelectorAll('path.hit').forEach(p => {
+    svg.querySelectorAll('path.hit, text.feed-label').forEach(p => {
       p.addEventListener('click', () => {
         const w = this.widgetById(p.dataset.wid);
         const b = w?.bindings?.find(x => x.id === p.dataset.bid);

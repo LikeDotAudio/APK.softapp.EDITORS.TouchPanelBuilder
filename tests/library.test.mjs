@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   ControlLibrary, groupCatalogue, variablesFromApi, suggestWidgetType,
-  humanLabel, bindingFor, benchDevices, benchFromBim, livenessOf, variableCount, matchesQuery,
+  humanLabel, bindingFor, benchDevices, benchFromBim, livenessOf, variableCount, matchesQuery, sourceFeeds,
 } from '../js/library.js';
 
 const CATALOGUE = {
@@ -129,4 +129,14 @@ test('a BIM part finds its instrument model: its panel template, else the one mo
   assert.equal(modelKeyForPart({ model: '34401A', panel: { template: 'DMM' } }, models), 'DMM/34401A');
   assert.equal(modelKeyForPart({ model: '33220a', manufacturer: 'Keysight' }, models), 'FG/33220A');
   assert.equal(modelKeyForPart({ model: 'MXA920' }, models), '');
+});
+
+test('a control fed by several commands draws each as a source from the left', () => {
+  const set = { id: 's', verb: 'set', command: 'Set_Range' };
+  const dc = { id: 'a', verb: 'get', command: 'Measure_DC_Volts' };
+  const ac = { id: 'b', verb: 'get', command: 'Measure_AC_Volts' };
+  const nab = { id: 'c', verb: 'nab', command: 'NAB_All' };
+  assert.deepEqual(sourceFeeds([set, dc]), [], 'one source keeps its single right-hand wire');
+  assert.deepEqual(sourceFeeds([set, dc, ac, nab]).map(b => b.id), ['a', 'b', 'c']);
+  assert.deepEqual(sourceFeeds(undefined), []);
 });

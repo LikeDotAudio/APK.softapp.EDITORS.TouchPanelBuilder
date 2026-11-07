@@ -312,6 +312,20 @@ export function bindingFor(v, device = null) {
   };
 }
 
+/** The verbs that bring information back from a device (a reading, a settings snapshot). */
+export const SOURCE_VERBS = new Set(['get', 'nab']);
+
+/**
+ * When a control can take its information from more than one command, each of
+ * those commands is a source feeding it and is drawn entering from the left,
+ * one feed per command. A control with one source (or none) keeps its single
+ * wire out of its right-hand port. Returns the source bindings, or [].
+ */
+export function sourceFeeds(bindings = []) {
+  const sources = (bindings || []).filter(b => SOURCE_VERBS.has(b?.verb));
+  return sources.length > 1 ? sources : [];
+}
+
 export function matchesQuery(v, q) {
   if (!q) return true;
   const hay = `${v.command} ${v.description} ${v.scpi} ${v.subsystem} ${v.model} ${v.family}`.toLowerCase();

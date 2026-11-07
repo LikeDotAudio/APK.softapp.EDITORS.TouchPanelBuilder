@@ -371,6 +371,19 @@
     .wire-layer path.wire.sel { stroke-width: 2.6; opacity: 1; }
     .wire-layer path.wire.off { stroke-dasharray: 4 4; opacity: 0.45; }
     .wire-layer path.wire.temp { stroke-dasharray: 6 4; opacity: 1; }
+    .wire-layer path.wire.feed { stroke: var(--osc-accent-secondary, #38bdf8); }
+    .wire-layer circle.feed-src { fill: var(--osc-accent-secondary, #38bdf8); }
+    .wire-layer circle.feed-port {
+      fill: var(--osc-accent-secondary, #38bdf8);
+      stroke: var(--osc-bg-base, #111);
+      stroke-width: 1.5;
+    }
+    .wire-layer text.feed-label {
+      fill: var(--osc-accent-secondary, #38bdf8);
+      font: 600 10px var(--apk-font-mono, ui-monospace, monospace);
+      pointer-events: auto;
+      cursor: pointer;
+    }
     .wire-layer path.hit {
       fill: none;
       stroke: transparent;

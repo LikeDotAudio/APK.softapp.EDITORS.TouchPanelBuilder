@@ -19,7 +19,7 @@ Design a touch panel on the real glass of a real panel, wire any control to anyt
 - **Right — Controllable Variables.** Per device its ins and outs, then Set / Do / Rig / Get / Nab and their sub-categories; every level is a grab bag (⊞).
 - **Bottom — the schedule.** Every control's address, bindings, place and size; pops out; each row opens a Look and a Behaviour editor.
 
-Wire by dragging a variable onto a control (or onto bare glass to make one), a control's ● port onto a variable, or ＋. Push and hold a control to copy it with all its wiring.
+Wire by dragging a variable onto a control (or onto bare glass to make one), a control's ● port onto a variable, or ＋. Push and hold a control to copy it with all its wiring. When several commands can each give a control its information (two or more Get / Nab), each one is drawn as its own labelled source feeding the control from the left.
 
 <!-- wiki:smoke -->
 <!-- /wiki:smoke -->
