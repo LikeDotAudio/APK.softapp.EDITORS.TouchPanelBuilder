@@ -333,6 +333,19 @@ function attach(el, w) {
   const kind = touchKind(w);
   el.dataset.touch = kind;
   if (kind === 'none') { el.title = 'Shows a reading; not wired to a command'; return; }
+  if (kind === 'pick') {
+    // One button of the row: its own value through the field's handler (its
+    // converter included — a preset in kHz goes out in Hz). Unproven until the
+    // unit's readback says so (haze until proven): only a "sent" flash here.
+    el.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-el]');
+      if (!btn || !el.contains(btn)) return;
+      if (fire(w, btn.dataset.el)) {
+        btn.classList.remove('sent'); void btn.offsetWidth; btn.classList.add('sent');
+      }
+    });
+    return;
+  }
   if (kind === 'press') {
     // A momentary press: true down, false up — the truthy edge fires a DO/NAB/GET.
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); fire(w, true); el.classList.add('on'); });
@@ -522,7 +535,7 @@ function render() {
     b.role = 'tab';
     b.textContent = pg.name;
     b.setAttribute('aria-selected', String(pg.id === state.page));
-    b.addEventListener('click', () => { state.page = pg.id; closePop(); render(); tellHost(); });
+    b.addEventListener('click', () => { state.turned = true; state.page = pg.id; closePop(); render(); tellHost(); });
     tabs.append(b);
   }
   const glass = $('run-glass');
@@ -538,7 +551,10 @@ function render() {
     fit();
     return;
   }
-  const first = p.pages[0] && p.pages[0].id;
+  // A widget with no page sits on the GUI file's first page — never on EVERYTHING
+  // IN, which leads the strip but holds no widgets of its own.
+  const own = p.pages.find(pg => pg.id !== EVERY_IN && pg.id !== EVERY_TIME);
+  const first = own && own.id;
   for (const w of p.widgets.filter(x => (x.page || first) === state.page)) {
     const el = document.createElement('div');
     el.className = `tw${(handlerFor(w) || w.direct) && !state.template ? '' : ' unbound'}${state.on.has(w.id) ? ' on' : ''}`;
@@ -599,10 +615,15 @@ async function startEverything(want) {
   state.who = { model: want.model, serial: want.serial, resource: want.resource };
   state.recorderDevice = recorderDevice(state.write);
   state.seededFrom = Date.now();
-  state.panel.pages.push({ id: EVERY_IN, name: 'EVERYTHING IN' }, { id: EVERY_TIME, name: 'EVERYTHING OVER TIME' });
-  // ?page=EVERYTHING IN links straight to it.
+  // EVERYTHING IN IS THE FIRST PAGE of a device that has it (owner 2026-11-12: "this
+  // should be the first page for those that have it"), and the one it opens on —
+  // unless a page was asked for (?page=) or turned to before this arrived (the
+  // host's ?frame= on open is its default, not a choice). OVER TIME stays last.
+  state.panel.pages.unshift({ id: EVERY_IN, name: 'EVERYTHING IN' });
+  state.panel.pages.push({ id: EVERY_TIME, name: 'EVERYTHING OVER TIME' });
   const asked = want.page && state.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
   if (asked) state.page = asked.id;
+  else if (!state.turned) { state.page = EVERY_IN; tellHost(); }
   render();
   const base = state.write.slice(0, -'/Write'.length);
   const link = state.bus;
@@ -669,6 +690,7 @@ function showFrame(framePath) {
 
 window.addEventListener('message', (e) => {
   if (e.source !== window.parent || !e.data || e.data.type !== 'apk:run-frame' || !state.panel) return;
+  state.turned = true;
   showFrame(e.data.frame);
 });
 

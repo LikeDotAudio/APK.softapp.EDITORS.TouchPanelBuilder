@@ -81,6 +81,11 @@ export function touchKind(widget) {
     return 'number';
   }
   if (!v) return 'none';                                  // nothing bound: it only shows
+  // An ARRAY of buttons (a _GuiButtonToggler with options: the 3235's crosspoints,
+  // a generator's frequency presets): each button fires its OWN value, as the
+  // engine's ButtonToggler publishes the option's value — never a press of the
+  // whole row (that sent "FREQuency true / false", 2026-11-12).
+  if (widget.type === 'crosspoints') return 'pick';
   if (Array.isArray(b.args) && b.args.length) return 'args';
   if (Array.isArray(b.values) && b.values.length) return 'choose';
   if (widget.type === 'button') return b.mode === 'momentary' || v === 'do' ? 'press' : 'toggle';

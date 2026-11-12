@@ -44,6 +44,10 @@ test('config first, arguments next, the value last — none of it retained', () 
 test('how each control is touched', () => {
   const set = { komand: FRAME_HANDLER };
   assert.equal(touchKind({ type: 'readout' }), 'none');
+  // A row of buttons fires each button's own value (a generator's presets sent
+  // "FREQuency true/false" as one momentary press, 2026-11-12).
+  assert.equal(touchKind({ ...set, type: 'crosspoints' }), 'pick');
+  assert.equal(touchKind({ type: 'crosspoints' }), 'none', 'unbound: it only shows');
   assert.equal(touchKind({ ...set, type: 'button', behavior: { mode: 'toggle' } }), 'toggle');
   assert.equal(touchKind({ ...set, type: 'button', behavior: { mode: 'momentary' } }), 'press');
   assert.equal(touchKind({ komand: { ...FRAME_HANDLER, komand_type: 'do' }, type: 'button' }), 'press');

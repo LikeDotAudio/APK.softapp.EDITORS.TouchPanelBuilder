@@ -205,11 +205,26 @@ function buttonFace(kind, label, icon) {
    wears the haze and says "—", never a made-up "1000 Hz" a person would read
    as the instrument. */
 export const HAZE = '<span class="tp-haze" title="No reading proven yet — nothing is invented">—</span>';
-/* A reading like 5.604818470080475 is shown to sensible precision (5.6); words pass through. */
+/* A reading shown to sensible precision, its words kept: 5.604818470080475 → 5.6;
+   SCPI's +2.0000000000000E+05 Hz → 200000 Hz, +1.0000000000000E-01 Vpp → 0.1 Vpp
+   (the generator's readback row overflowed its cells, 2026-11-12). A tiny or huge
+   number keeps its exponent, short; anything that is not a number passes through. */
 export function tidyNumber(v) {
-  const m = String(v).match(/^\s*(-?\d+\.\d{3,})(\s.*)?$/);
+  const m = String(v).match(/^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(\s.*)?$/);
   if (!m) return v;
-  return `${String(Number(Number(m[1]).toPrecision(Math.max(3, m[1].split('.')[0].replace('-', '').length + 1))))}${m[2] || ''}`;
+  const raw = m[1];
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return v;
+  const exp = /[eE]/.test(raw);
+  const longDecimal = /\.\d{3,}/.test(raw);
+  if (!exp && !longDecimal) return v;
+  const a = Math.abs(n);
+  let out;
+  if (n === 0) out = '0';
+  else if (a >= 1e7 || a < 1e-4) out = n.toExponential(3).replace(/\.?0+e/, 'e');
+  else if (!exp) out = String(Number(n.toPrecision(Math.max(3, raw.replace(/^[+-]/, '').split('.')[0].length + 1))));
+  else out = String(Number(n.toPrecision(7)));
+  return `${out}${m[2] || ''}`;
 }
 
 const shownValue = (c) => {
@@ -615,7 +630,10 @@ export const CONTROL_DEFINITIONS = {
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; overflow:hidden; ${box('#efe3bd', '#3b3325', '6px')}">
           <svg viewBox="0 0 260 160" style="width:100%; height:100%; display:block;">
             <defs>
-              <filter id="needle-shadow" x="-20%" y="-20%" width="140%" height="140%">
+              <!-- userSpaceOnUse: the needle is drawn upright, so its bounding box is ZERO
+                   wide and a %-of-bbox filter region (x=-20% width=140%) clipped it away
+                   entirely — every VU meter drew without its needle. -->
+              <filter id="needle-shadow" filterUnits="userSpaceOnUse" x="0" y="0" width="260" height="160">
                 <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.4"/>
               </filter>
             </defs>
