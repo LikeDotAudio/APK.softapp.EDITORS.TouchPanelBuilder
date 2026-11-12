@@ -369,3 +369,12 @@ test('a komand_readout beside a reading command shows that command\'s named read
   assert.equal(by('MAKE · MODEL').behavior.default, 'HP / Agilent / Keysight · 4263A');
   assert.equal(by('FETCH READING (:FETCH?)').address, LW);
 });
+
+test('the deck: the GUI file\'s pages first, in its order; added pages after', async () => {
+  const { deckOrder } = await import('../js/devicePanel.js');
+  const panel = { pages: [{ id: 'n', name: 'NAB' }, { id: 'a', name: 'LCR INSTRUMENT', source: { path: '0/a.json' } },
+    { id: 't', name: 'TRACE' }, { id: 'b', name: 'SETUP', source: { path: '1/b.json' } }] };
+  assert.deepEqual(deckOrder(panel).pages.map(p => p.id), ['a', 'b', 'n', 't']);
+  const ordered = deckOrder(panel);
+  assert.equal(deckOrder(ordered), ordered, 'already in order: the same panel');
+});

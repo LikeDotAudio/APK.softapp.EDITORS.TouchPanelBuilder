@@ -30,6 +30,19 @@
 import { variableId, suggestWidgetType, humanLabel, bindingFor } from './library.js';
 import { rigHeight } from './controls.js';
 
+/** THE DECK (owner 2026-11-12, "have these pages at the top of the deck"): the
+    pages drawn from the family's GUI file (each carries `source`, the frame it
+    came from) come first, in the file's order; every page the builder or the
+    runner adds (RIG, NAB, TRACE, a page of the api.json fallback) follows, in
+    its own order. Same panel back when it is already in that order. */
+export function deckOrder(panel) {
+  if (!panel || !Array.isArray(panel.pages)) return panel;
+  const gui = panel.pages.filter(pg => pg && pg.source);
+  const added = panel.pages.filter(pg => !(pg && pg.source));
+  const pages = [...gui, ...added];
+  return pages.every((pg, i) => pg === panel.pages[i]) ? panel : { ...panel, pages };
+}
+
 /** Which placement a starting panel is drawn from when the link names none. */
 export const DEFAULT_PLACEMENT = 'Instruments';
 

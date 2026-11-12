@@ -15,7 +15,7 @@
    drawn, every control says it cannot send, and nothing is pretended. */
 
 import { CONTROL_DEFINITIONS, widgetStyleVars } from './controls.js';
-import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl } from './devicePanel.js';
+import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl, deckOrder } from './devicePanel.js';
 import { ControlLibrary, modelKey } from './library.js';
 // The app's discovery tunables, through the shared client (ROAD-3502).
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
@@ -449,7 +449,12 @@ function render() {
   }
   const tabs = $('run-tabs');
   tabs.innerHTML = '';
-  for (const pg of p.pages) {
+  // Inside an OS window whose own strip already holds the GUI file's pages
+  // (?tabs=0, the frame found), this strip carries only the pages added after
+  // them (RIG, NAB, TRACE), so nothing in the deck is out of reach.
+  const listed = state.hostFramed ? p.pages.filter(pg => !pg.source) : p.pages;
+  tabs.hidden = !listed.length;
+  for (const pg of listed) {
     const b = document.createElement('button');
     b.role = 'tab';
     b.textContent = pg.name;
@@ -507,9 +512,10 @@ function tellHost(kind = 'apk:run-page') {
 
 function showFrame(framePath) {
   const pg = pageForFrame(framePath);
-  $('run-tabs').hidden = HOST_TABS && !!pg;
-  if (pg && pg.id !== state.page) { state.page = pg.id; closePop(); render(); }
-  else fit();
+  state.hostFramed = HOST_TABS && !!pg;
+  if (pg) state.page = pg.id;
+  closePop();
+  render();
   tellHost();
 }
 
@@ -549,7 +555,7 @@ async function start() {
   state.write = (box && box.write_topic) || (panel.device && panel.device.write_topic) || '';
   // What the family IS (its thing.json roles, ROAD-3516): a monitoring box gets its trace.
   const roles = rolesFor(families, want.family || (panel.device && panel.device.type));
-  state.panel = isMonitoring(roles) ? withTracePage(panel, roles, rigTopicOf(state.write), { width: W, height: H }) : panel;
+  state.panel = deckOrder(isMonitoring(roles) ? withTracePage(panel, roles, rigTopicOf(state.write), { width: W, height: H }) : panel);
   state.bus = bus;
   const asked = want.page && state.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
   state.page = asked ? asked.id : (state.panel.pages[0] && state.panel.pages[0].id);

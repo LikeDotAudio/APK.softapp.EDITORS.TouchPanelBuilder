@@ -7,7 +7,7 @@ import { connectTouchPanelHost, panelBlock, panelMeta, bindPanelDevice } from '.
 const DISCOVERED_CONFIG = new URL('../config/discovered.json', import.meta.url).href;
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(DISCOVERED_CONFIG) : Promise.resolve({}));
-import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl, wantFor, arrivals, connectionCount, elementConnections } from './devicePanel.js';
+import { deckOrder, linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl, wantFor, arrivals, connectionCount, elementConnections } from './devicePanel.js';
 import { savedIdentity, savedTopic, readSaved, writeSaved, savedDoc, benchBus } from './savedPanel.js';
 import {
   CONTROL_DEFINITIONS, STYLE_FIELDS, BEHAVIOR_FIELDS, STYLE_PRESETS, widgetStyleVars, rigHeight,
@@ -1604,6 +1604,8 @@ export class TouchPanelApp {
     } else {
       this.panel.pages = [{ id: 'p1', name: 'Main' }];
     }
+    // The deck: the GUI file's pages first, the added ones after (devicePanel deckOrder).
+    this.panel.pages = deckOrder(this.panel).pages;
     this.currentPage = this.panel.pages[0].id;
     if (Array.isArray(block.widgets)) {
       this.panel.widgets = block.widgets.map(w => ({ bindings: [], ...w }));
