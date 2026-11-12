@@ -386,6 +386,10 @@ export const CONTROL_DEFINITIONS = {
     // toggler branch): a grid of max_cols equal columns, shrunk to its content
     // and centred, padx/pady gaps (5 when unset or 0), 10px padding, each button
     // layout.height tall — so a wire leaves from the button the engine draws.
+    // Content-box, as the engine's: its button is the cell's width and
+    // layout.height PLUS its border, so a border-box stand-in was 2 × border
+    // smaller and every wire left ~2 px off the drawn button's middle
+    // (measured on the 3235's EDAC rows, ROAD-3697).
     render(c) {
       const f = c.field || {};
       const lay = f.layout || {};
@@ -398,7 +402,7 @@ export const CONTROL_DEFINITIONS = {
       const face = faceOf(f, false);
       const fs = (f.style && f.style.inactive && f.style.inactive.font_size) || 11;
       const cells = list.map(o => `<div class="tp-el" data-el="${esc(o.value)}" title="${esc(o.label)} · ${esc(o.value)}"
-          style="box-sizing:border-box; height:${bh}px; display:flex; align-items:center; justify-content:center; text-align:center; white-space:pre;
+          style="box-sizing:content-box; width:100%; height:${bh}px; display:flex; align-items:center; justify-content:center; text-align:center; white-space:pre;
           background:${face.bg}; color:${face.fg}; border:${face.bw}px solid ${face.border}; border-radius:${Number(lay.corner_radius) || 6}px; font-size:${fs}px; line-height:1.1;">${esc(o.label)}
 (${esc(o.value)})</div>`).join('');
       return `<div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center;">
