@@ -29,6 +29,7 @@ From this repository's own commits (the commit message is the record):
 - ROAD-3697: a crosspoint stand-in is content-box, as the engine's button, so its wire leaves the drawn button's middle (`c4a320c`)
 - re-vendor apk-contracts web bundle: contracts 2.4.0 retires APK.audio/Tests/{suite} (ROAD-3729) (`a5b313a`)
 - ROAD-3730: the glass and a saved panel address a device field by the box (Devices/<serial or key>/<frame path>) (`ce7bd5f`)
+- A komand_readout listens on the topic it names (the 4263A's Status, primary, secondary reads <box>/Read, not Reading/Read_IDN); the IDN lands only on a control bound to it, never on Make · Model by its label (`33d4859`)
 
 ## Releases
 - **Released `2.0.0`, tag `v2.0.0`** (2026-11-05, ROAD-3452, the owner's V2) — no SDK pin; every manifest says 2.0.0; GitHub release `v2.0.0`.
