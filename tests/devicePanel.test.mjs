@@ -378,3 +378,23 @@ test('the deck: the GUI file\'s pages first, in its order; added pages after', a
   const ordered = deckOrder(panel);
   assert.equal(deckOrder(ordered), ordered, 'already in order: the same panel');
 });
+
+/* ROAD-3746: run.html for a real unit hands off to the OS device window. */
+import { deviceWindowUrl } from '../js/devicePanel.js';
+
+test('deviceWindowUrl: a real unit on its own opens its OS device window by serial', () => {
+  assert.equal(deviceWindowUrl('?model=4263A&family=LCR&serial=3145J01840&resource=GPIB0%3A%3A17%3A%3AINSTR', { origin: 'http://h:8080' }),
+    'http://h:8080/APK%3AOS/index.html?solo=Device_Consoles&device=3145J01840');
+  assert.equal(deviceWindowUrl('?serial=A%2FB'), '/APK%3AOS/index.html?solo=Device_Consoles&device=A%2FB');
+});
+
+test('deviceWindowUrl: stays run.html inside a window, for the preview, a BIM template, or no serial', () => {
+  const real = '?model=4263A&serial=3145J01840';
+  assert.equal(deviceWindowUrl(`${real}&embed=1`), '');
+  assert.equal(deviceWindowUrl(real, { framed: true }), '');
+  assert.equal(deviceWindowUrl(`${real}&preview=1`), '');
+  assert.equal(deviceWindowUrl(`${real}&bim=agilent/4263A`), '');
+  assert.equal(deviceWindowUrl('?model=4263A&resource=GPIB0%3A%3A17%3A%3AINSTR'), '');
+  assert.equal(deviceWindowUrl('?model=4263A&serial=0000'), '');
+  assert.equal(deviceWindowUrl(''), '');
+});

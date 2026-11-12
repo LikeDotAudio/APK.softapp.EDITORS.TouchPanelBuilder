@@ -15,7 +15,7 @@
    drawn, every control says it cannot send, and nothing is pretended. */
 
 import { CONTROL_DEFINITIONS, widgetStyleVars } from './controls.js';
-import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl, deckOrder } from './devicePanel.js';
+import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl, deckOrder, deviceWindowUrl } from './devicePanel.js';
 import { ControlLibrary, modelKey } from './library.js';
 // The app's discovery tunables, through the shared client (ROAD-3502).
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
@@ -683,6 +683,9 @@ function fit() {
 /* ---------------------------------------------------------------- start */
 
 async function start() {
+  // A real unit, opened on its own: its one interface is the OS device window (ROAD-3746).
+  const door = deviceWindowUrl(location.search, { origin: location.origin, framed: window.parent !== window });
+  if (door) { location.replace(door); return; }
   if (EMBED) document.querySelector('.run-head').hidden = true;
   const want = linkQuery(location.search);
   if (!want.model && !want.bim) { $('run-name').textContent = 'NO DEVICE NAMED (?model=…)'; return; }

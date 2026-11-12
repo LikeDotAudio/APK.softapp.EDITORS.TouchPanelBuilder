@@ -597,6 +597,30 @@ export function linkQuery(search) {
 
 const LINK_KEYS = ['model', 'family', 'serial', 'resource', 'protocol', 'placement', 'page', 'bim'];
 
+/* ------------------------------------------------- one door to a real unit */
+
+/** Where the OS shell's index.html is, from any page on the same origin. */
+export const OS_INDEX = '/APK%3AOS/index.html';
+
+/**
+ * ONE TOUCH PANEL PER DEVICE (owner 2026-11-12, ROAD-3746: the OS device window
+ * is THE interface). run.html opened on its own for a real unit — named by its
+ * serial — hands off to that unit's device window,
+ * `index.html?solo=Device_Consoles&device=<serial>`. It stays itself when it is
+ * the renderer inside a window (?embed=1, or framed at all), the builder's
+ * preview (?preview=1), a BIM part's template (?bim=, no unit), or names no
+ * serial (no identity to hand over — never an address).
+ * -> the device window's URL, or '' to stay.
+ */
+export function deviceWindowUrl(search, { origin = '', framed = false } = {}) {
+  const q = new URLSearchParams(search || '');
+  const get = k => (q.get(k) || '').trim();
+  if (framed || get('embed') === '1' || get('preview') === '1' || get('bim')) return '';
+  const serial = get('serial');
+  if (!serial || /^0+$/.test(serial)) return '';
+  return `${origin}${OS_INDEX}?solo=Device_Consoles&device=${encodeURIComponent(serial)}`;
+}
+
 /* ------------------------------------------------- a BIM part's panel template */
 
 /** Where a part's whole record is read: BIM's /api/bim on this page's own origin
