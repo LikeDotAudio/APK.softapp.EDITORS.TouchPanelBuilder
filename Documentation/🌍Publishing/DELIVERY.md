@@ -15,5 +15,20 @@ How it is built, shipped, and where it lands.
 
 Library-wired controls (185 devices, ~39,000 variables); device theme and a true-scale glass; 1,096 looks (69 era looks incl. Ward-Beck Systems and UREI, plus the widget library) with distinct hardware and a live engine view; bench liveness; page tabs; Set/Do/Rig/Get/Nab sub-categories and grab bags; drag a device for its whole palette; push-and-hold copy; frame export / import; engine glass and engine preview (ROAD-3499, closed).
 
+## Delivered 2026-11-11 – 2026-11-12
+
+From this repository's own commits (the commit message is the record):
+
+- vendor: apk-contracts web bundle refreshed from contracts/generated/web (report.ts: LogLine + ProblemRecord, System/Problems family) (`b32a13e`)
+- Edit opens the panel the device window shows: its frames, its crosspoints, every element wired (`4ea736f`)
+- vendor/apk-softapp: re-vendored — every problem card is reported through the SDK (ROAD-3695 step 2) (`868947f`)
+- ROAD-3687: ?bim=<part> draws a BIM part's own panel template, no unit — run.html and the builder (`231f1b0`)
+- touchPanelApp.js: take back another session's uncommitted ROAD-3697 hunks that 231f1b0 swept in (`e7af9b0`)
+- vendor: apk-contracts web bundle refreshed from contracts/generated/web (five report codes, ROAD-3695; unit-gate, ROAD-3684) (`90c75e7`)
+- ROAD-3697: the glass and a saved panel keep the device window's addresses; the glass is a read-only mirror (`ecec314`)
+- ROAD-3697: a crosspoint stand-in is content-box, as the engine's button, so its wire leaves the drawn button's middle (`c4a320c`)
+- re-vendor apk-contracts web bundle: contracts 2.4.0 retires APK.audio/Tests/{suite} (ROAD-3729) (`a5b313a`)
+- ROAD-3730: the glass and a saved panel address a device field by the box (Devices/<serial or key>/<frame path>) (`ce7bd5f`)
+
 ## Releases
 - **Released `2.0.0`, tag `v2.0.0`** (2026-11-05, ROAD-3452, the owner's V2) — no SDK pin; every manifest says 2.0.0; GitHub release `v2.0.0`.
