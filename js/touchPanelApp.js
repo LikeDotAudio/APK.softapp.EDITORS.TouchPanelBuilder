@@ -1460,10 +1460,10 @@ export class TouchPanelApp {
     };
     const pageAsked = want.page && this.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
     this.setPage(pageAsked ? pageAsked.id : this.panel.pages[0].id);
-    // WHAT YOU SEE IS WHAT YOU EDIT: a panel drawn from the device's own frames
-    // is drawn on the glass by the same widget engine the device window uses
-    // (engine glass), its fields exported back as they came.
-    if (this.panel.widgets.some(w => w.frame)) this.setEngineGlass(true);
+    // WHAT YOU SEE IS WHAT YOU EDIT: the glass draws every control as the running
+    // panel does (run.html — the one renderer of a device panel everywhere, the OS
+    // device windows included, owner 2026-11-12 "homogenize this"). ⚙ Engine glass
+    // stays a toggle for checking how the frame engine would draw the export.
     this.changed();
     say(useSaved
       ? `${this.panel.name} · SAVED ${String(saved.saved_at || '').slice(0, 16).replace('T', ' ')}`

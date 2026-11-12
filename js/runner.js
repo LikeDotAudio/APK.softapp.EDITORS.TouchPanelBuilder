@@ -432,7 +432,10 @@ function draw(w) {
   const def = CONTROL_DEFINITIONS[w.type] || CONTROL_DEFINITIONS.readout;
   if (!el || !def) return;
   // A live panel never shows the builder's placeholder value: nothing read yet is "—".
-  const shown = w.value !== undefined && w.value !== null && w.value !== '' ? w.value : '—';
+  // The panel's OWN words (Device, Make · Model, Address: bound to nothing, no
+  // command, its value_default) are not a reading and are shown as written.
+  const ownWords = !w.address && !w.direct && !handlerFor(w) && w.behavior && w.behavior.default;
+  const shown = w.value !== undefined && w.value !== null && w.value !== '' ? w.value : ownWords ? w.behavior.default : '—';
   const behavior = { ...(w.behavior || {}), default: '' };
   el.innerHTML = def.render({ ...w, behavior, label: esc(w.label), subtitle: esc(w.subtitle), value: esc(shown), style: w.style || {} });
 }
@@ -451,7 +454,7 @@ function render() {
     b.role = 'tab';
     b.textContent = pg.name;
     b.setAttribute('aria-selected', String(pg.id === state.page));
-    b.addEventListener('click', () => { state.page = pg.id; closePop(); render(); });
+    b.addEventListener('click', () => { state.page = pg.id; closePop(); render(); tellHost(); });
     tabs.append(b);
   }
   const glass = $('run-glass');
@@ -473,6 +476,48 @@ function render() {
   fit();
 }
 
+/* ---------------------------------------------------------------- inside a host
+
+   THE ONE RENDERER OF A DEVICE PANEL (owner 2026-11-12, "homogenize this"):
+   the OS draws a box's touch panel with THIS page in its frames panes and its
+   device windows (OS Apps/Frames split-panes, device-window). There it is
+   ?embed=1 (the host window has the name, the bus and the ✏️ Edit), and the
+   host's own tab strip picks the page: ?frame=<the frame's path in its
+   placement> opens the page drawn from that frame, ?tabs=0 hides this page's
+   tabs when that frame was found, and {type:'apk:run-frame', frame} from the
+   host turns the page without a reload. Each page turn is told back as
+   {type:'apk:run-page', frame} so the host's open-panel asks follow it. */
+const host = new URLSearchParams(location.search);
+const EMBED = host.get('embed') === '1';
+const HOST_TABS = host.get('tabs') === '0';
+
+function pageForFrame(framePath) {
+  const p = state.panel;
+  if (!p || !framePath) return null;
+  const want = String(framePath).replace(/^\/+/, '');
+  return p.pages.find(pg => pg.source && String(pg.source.path || '').replace(/^\/+/, '') === want) || null;
+}
+
+function tellHost(kind = 'apk:run-page') {
+  if (window.parent === window) return;
+  const pg = state.panel && state.panel.pages.find(x => x.id === state.page);
+  try { window.parent.postMessage({ type: kind, frame: (pg && pg.source && pg.source.path) || '', page: pg ? pg.name : '' }, '*'); }
+  catch (_) { /* host gone */ }
+}
+
+function showFrame(framePath) {
+  const pg = pageForFrame(framePath);
+  $('run-tabs').hidden = HOST_TABS && !!pg;
+  if (pg && pg.id !== state.page) { state.page = pg.id; closePop(); render(); }
+  else fit();
+  tellHost();
+}
+
+window.addEventListener('message', (e) => {
+  if (e.source !== window.parent || !e.data || e.data.type !== 'apk:run-frame' || !state.panel) return;
+  showFrame(e.data.frame);
+});
+
 function fit() {
   const stage = $('run-stage');
   stage.style.top = `${$('run-tabs').getBoundingClientRect().bottom}px`;
@@ -484,6 +529,7 @@ function fit() {
 /* ---------------------------------------------------------------- start */
 
 async function start() {
+  if (EMBED) document.querySelector('.run-head').hidden = true;
   const want = linkQuery(location.search);
   if (!want.model && !want.bim) { $('run-name').textContent = 'NO DEVICE NAMED (?model=…)'; return; }
   $('run-name').textContent = `${want.model || want.bim} — LOADING…`;
@@ -538,6 +584,8 @@ async function start() {
   setInterval(busState, 2000);
   render();
   listen();
+  if (host.get('frame')) showFrame(host.get('frame'));
+  tellHost('apk:run-ready');
 }
 
 /* The template, drawn: no box, no bus, no saved panel — a picture of what a box of

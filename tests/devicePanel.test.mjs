@@ -340,7 +340,7 @@ test('Save writes the panel back in the device\'s frame form: a frame per source
 /* The 4263A's LCR Instrument frame, as NODE.BareMetal presents it (2026-11-12):
    a komand_readout that names the box's /Read topic listens THERE — the
    measurement the OS device window shows — not on Reading/Read_IDN. */
-test('a komand_readout with a topic listens on its topic; only a topicless one falls back to Read_IDN', () => {
+test('a komand_readout beside a reading command shows that command\'s named reading; the press stays in its frame', () => {
   const LW = 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Write';
   const READ = 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Read';
   const lcr = {
@@ -357,8 +357,14 @@ test('a komand_readout with a topic listens on its topic; only a topicless one f
   };
   const p = panelFromPresented(lcr);
   const by = (l) => p.widgets.find(w => w.label === l);
-  assert.equal(by('STATUS, PRIMARY, SECONDARY').address, READ);
-  assert.equal(by('BARE').address, 'Reading/Read_IDN');
+  // Its block's own command's named reading, never the raw /Read every answer lands on
+  // (owner 2026-11-12: it showed the *IDN? reply).
+  const NAMED = 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Reading/Fetch_Existing';
+  assert.equal(by('STATUS, PRIMARY, SECONDARY').address, NAMED);
+  assert.equal(by('BARE').address, NAMED);
+  // An argument-less nab is a press: it stays on its frame's page, as the device window draws it.
+  assert.equal(by('FETCH READING (:FETCH?)').page, by('STATUS, PRIMARY, SECONDARY').page);
+  assert.equal(by('FETCH READING (:FETCH?)').type, 'button');
   assert.equal(by('MAKE · MODEL').address, '', 'the panel\'s own words: bound to nothing');
   assert.equal(by('MAKE · MODEL').behavior.default, 'HP / Agilent / Keysight · 4263A');
   assert.equal(by('FETCH READING (:FETCH?)').address, LW);

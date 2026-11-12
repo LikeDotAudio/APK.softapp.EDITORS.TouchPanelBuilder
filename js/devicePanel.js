@@ -489,10 +489,20 @@ export function panelFromPresented(doc, opts = {}) {
         if (!carriers.has(owner)) carriers.set(owner, {});
         carriers.get(owner)[k] = f;
       }
+      // THE BLOCK'S OWN READING (owner 2026-11-12): a readout beside a command that
+      // reads (the 4263A's FETCH READING beside "Status, primary, secondary") shows
+      // THAT command's named reading, <box>/Reading/<command> — not the box's raw
+      // <box>/Read, which carries whatever answer came last (an *IDN? among them).
+      const reader = visible.map(([, f]) => f.komand_handler || {})
+        .find(h => h.enable !== false && h.command && /^(nab|get)$/i.test(String(h.komand_type || '')));
+      const readerTopic = reader ? (/\/Write$/.test(String(reader.target || ''))
+        ? `${String(reader.target).slice(0, -'/Write'.length)}/Reading/${reader.command}` : `Reading/${reader.command}`) : '';
       for (const [key, field] of visible) {
         const h0 = field.komand_handler || {};
         const verb = h0.enable === false ? '' : h0.komand_type;
-        const sec = SECTION[verb] ? verb : '';
+        // A rig / nab that takes arguments needs its input rows (its own RIG / NAB
+        // page); one that takes none is a press, and stays where the frame put it.
+        const sec = SECTION[verb] && (h0.args || field.args || []).length ? verb : '';
         const type = sec || controlFor(field);
         const horiz = type === 'fader' && /Horizontal/.test(field.type);
         const args = sec ? (h0.args || field.args || []) : null;
@@ -504,7 +514,8 @@ export function panelFromPresented(doc, opts = {}) {
           label: label.toUpperCase(),
           x: 0, y: 0, w, h,
           page: '',
-          address: addressOf(key, field),
+          address: readerTopic && field.komand_readout && !field.komand_listen_topic
+            && (!field.topic || /\/Read$/.test(String(field.topic))) ? readerTopic : addressOf(key, field),
           channel: 1,
           bindings: [],
         };
