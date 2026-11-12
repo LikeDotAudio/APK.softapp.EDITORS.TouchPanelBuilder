@@ -319,25 +319,29 @@ export function widgetToField(w, style = {}, index = 0) {
   return field;
 }
 
-/* ------------------------------------------- where a device field lives (ROAD-3697)
+/* ------------------------------------------- where a device field lives (ROAD-3697, ROAD-3725)
 
-   The engine addresses a field by where its frame sits: the device window
-   draws `<placement>/<device folder>/<frame path>` (OS bus-panels
-   devicePanelTree), so a crosspoint row's state is retained at
-   Gui/<that path, cleaned>/<block>/…/<field key>. A page the builder exports
-   names its blocks after the page, so the same field would sit at another
-   topic: the window would not show what is lit, and the editor's glass would
-   mirror nothing. So a field that came from the device's frame (and every
-   hidden field it carries) is exported with that address written out. */
+   The engine addresses a field by where its frame's state lives. Since
+   ROAD-3725 that is the BOX, not the window: every window that draws a
+   device's panel (Device Consoles, Instruments, each Touch Point, the
+   standalone engine) passes topicPath `Devices/<identity>/<frame path>` (OS
+   bus-panels devicePanelTree, FrontEnd panelOverlay), the identity being the
+   serial, else the key it presents as (savedIdentity — panel.deviceId). So a
+   crosspoint row's state is retained at Gui/Devices/<identity>/<frame path,
+   cleaned>/<block>/…/<field key>. A page the builder exports names its blocks
+   after the page, so the same field would sit at another topic: the window
+   would not show what is lit, and the editor's glass would mirror nothing. So
+   a field that came from the device's frame (and every hidden field it
+   carries) is exported with that address written out. */
 
-/** The path the device's own window draws a page's frame under, or ''. */
+/** The path the device's state is keyed by for a page's frame, or ''. */
 export function deviceWindowPath(panel, page) {
   const p = panel || {};
   const src = page && page.source;
   const at = String(p.sourcePlacement || '').replace(/^\/+|\/+$/g, '');
-  const folder = String(p.sourceFolder || '').trim();
-  if (!src || !src.path || !at || at === 'saved' || !folder) return '';
-  return `${at}/${folder}/${String(src.path).replace(/^\/+/, '')}`;
+  const id = String(p.deviceId || '').trim().replace(/[^A-Za-z0-9._-]+/g, '_');
+  if (!src || !src.path || !at || at === 'saved' || !id) return '';
+  return `Devices/${id}/${String(src.path).replace(/^\/+/, '')}`;
 }
 
 /** A device frame field's own topic under `prefix` (Gui/<window path>): its

@@ -2,10 +2,13 @@
 // MIT Licence. Free, for everyone, for ever. Full text in LICENSE at the root.
 /* A device frame field keeps the address its window gives it (ROAD-3697).
 
-   The 3235's Device Consoles window draws 1_EDAC_1_12/0_EDAC_1_12.json under
-   Device_Consoles/3235_44-44-44-222-gpib7-10, so a crosspoint row's state is
-   retained at Gui/Device_Consoles/44-44-44-222-gpib7-10/EDAC_1_12/<block>/<key>
-   (read off the bench's broker, 2026-11-11). The builder's pages rename the
+   Since ROAD-3725 every window keys a device frame's state by the BOX: the
+   3235's 1_EDAC_1_12/0_EDAC_1_12.json is drawn with topicPath
+   Devices/3235_44-44-44-222-gpib7-10/1_EDAC_1_12/0_EDAC_1_12.json (its key; it
+   presents no serial), so a crosspoint row's state is retained at
+   Gui/Devices/44-44-44-222-gpib7-10/EDAC_1_12/<block>/<key> (the engine strips
+   the leading "3235_" as an ordering prefix) in Device
+   Consoles, Instruments and every Touch Point alike (ROAD-3730). The builder's pages rename the
    blocks; the export must still put every device field — and the hidden
    carriers a matrix sends through — at that address, or the glass mirrors
    nothing and a saved panel shows nothing lit. The prefix is the contracts'
@@ -53,8 +56,10 @@ const fieldsIn = (frameDoc) => Object.values(Object.values(frameDoc)[0].blocks).
 
 test('a page is drawn where the device window draws its frame', () => {
   const p = panelOf();
-  assert.equal(deviceWindowPath(p, p.pages[0]), 'Device_Consoles/3235_44-44-44-222-gpib7-10/1_EDAC_1_12/0_EDAC_1_12.json');
-  assert.equal(deviceWindowPath({ ...p, sourceFolder: '' }, p.pages[0]), '', 'no folder, no window path');
+  assert.equal(deviceWindowPath(p, p.pages[0]), 'Devices/3235_44-44-44-222-gpib7-10/1_EDAC_1_12/0_EDAC_1_12.json');
+  assert.equal(deviceWindowPath({ ...p, deviceId: '' }, p.pages[0]), '', 'no box, no device address');
+  assert.equal(deviceWindowPath({ ...p, deviceId: 'MY44044028', sourcePlacement: 'Instruments/3_Scope' }, p.pages[0]),
+    'Devices/MY44044028/1_EDAC_1_12/0_EDAC_1_12.json', 'the serial keys it, whichever window it came from');
   assert.equal(deviceWindowPath({ ...p, sourcePlacement: 'saved' }, p.pages[0]), '');
   assert.equal(deviceFieldTopic('P', 'A/B', 'k'), 'P/A/B/k');
   assert.equal(deviceFieldTopic('P', 'Main', 'k'), 'P/k', 'a loose field sits under the frame itself');
@@ -66,7 +71,7 @@ test('a crosspoint row keeps the topic its window retains its state at', () => {
   const edac = { ...p, pages: [p.pages[0]], widgets: p.widgets.filter(w => w.page === p.pages[0].id) };
   const fields = Object.fromEntries(fieldsIn(panelToFrame(edac, undefined, { prefixOf })));
   assert.equal(fields.Bus_AB0_Left_Out.topic,
-    'APK.audio/Gui/Device_Consoles/44-44-44-222-gpib7-10/EDAC_1_12/Card_4_Snake_Interface/Bus_AB0_Left_Out');
+    'APK.audio/Gui/Devices/44-44-44-222-gpib7-10/EDAC_1_12/Card_4_Snake_Interface/Bus_AB0_Left_Out');
   const plain = Object.fromEntries(fieldsIn(panelToFrame(edac)));
   assert.equal(plain.Bus_AB0_Left_Out.topic, undefined, 'no prefixOf: exported as before');
 });
@@ -75,7 +80,7 @@ test('the matrix and the hidden carriers it sends through keep their window addr
   const p = panelOf();
   const coax = framesOf(p, { prefixOf }).find(f => f.path === '0_Coax/0_left.json');
   const fields = Object.fromEntries(fieldsIn(coax.content));
-  const base = 'APK.audio/Gui/Device_Consoles/44-44-44-222-gpib7-10/Coax/Card_000_Coax_Matrix';
+  const base = 'APK.audio/Gui/Devices/44-44-44-222-gpib7-10/Coax/Card_000_Coax_Matrix';
   assert.equal(fields.Matrix.topic, `${base}/Matrix`);
   assert.equal(fields.Open_Cmd.topic, `${base}/Open_Cmd`, 'the matrix opens through its sibling, so the sibling is where it was');
   assert.equal(fields.Close_Cmd.topic, `${base}/Close_Cmd`);
