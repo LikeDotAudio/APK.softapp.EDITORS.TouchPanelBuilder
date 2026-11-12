@@ -25,6 +25,8 @@ import {
   idnBound,
 } from './runPanel.js';
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
+import { Everything, sdkIndex } from './everything.js';
+import { mountEverythingIn, mountEverythingOverTime } from './everythingView.js';
 import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from './tracePanel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -471,8 +473,16 @@ function render() {
   const glass = $('run-glass');
   glass.style.width = `${W}px`;
   glass.style.height = `${H}px`;
+  if (state.view) { state.view.stop(); state.view = null; }
   glass.innerHTML = '';
   state.els.clear();
+  if (state.every && (state.page === EVERY_IN || state.page === EVERY_TIME)) {
+    const who = { ...state.who, key: state.key };
+    state.view = state.page === EVERY_IN ? mountEverythingIn(glass, state.every, who)
+      : mountEverythingOverTime(glass, state.every, who, { onWindow: (w) => seedBack(w.from) });
+    fit();
+    return;
+  }
   const first = p.pages[0] && p.pages[0].id;
   for (const w of p.widgets.filter(x => (x.page || first) === state.page)) {
     const el = document.createElement('div');
@@ -485,6 +495,83 @@ function render() {
     attach(el, w);
   }
   fit();
+}
+
+/* ---------------------------------------------------------------- everything in
+
+   EVERYTHING IN / EVERYTHING OVER TIME (owner 2026-11-12, js/everything.js): two
+   pages after the GUI file's, on every device that has a box to answer. They hear
+   the unit's own /Reply (the proof), its status record (not connected = offline:
+   a gap), and are seeded from the capture recorder for the window on screen. */
+const EVERY_IN = 'everything-in';
+const EVERY_TIME = 'everything-over-time';
+
+async function sdkOf(want) {
+  for (const base of ['/api/instrument/api', '/api/os/instrument/api']) {
+    try {
+      const r = await fetch(`${base}?model=${encodeURIComponent(want.model)}&family=${encodeURIComponent(want.family || '')}`, { cache: 'no-store' });
+      if (r.ok) return await r.json();
+    } catch (_) { /* not served under this spelling */ }
+  }
+  return null;
+}
+
+/* The recorder's name for the box: <proto>/<family>/<model>/<dev>, from its Write topic. */
+function recorderDevice(write) {
+  const m = /\/Protocols\/([^/]+)\/Device\/([^/]+)\/([^/]+)\/([^/]+)\/Write$/.exec(String(write || ''));
+  return m ? `${m[1]}/${m[2]}/${m[3]}/${m[4]}` : '';
+}
+
+/* History only for the window asked, and only what is not already held. */
+async function seedBack(fromMs) {
+  const e = state.every;
+  if (!e || !state.recorderDevice || !(fromMs < state.seededFrom)) return;
+  const until = state.seededFrom;
+  state.seededFrom = fromMs;
+  try {
+    const r = await fetch(`/api/os/captures/reads?device=${encodeURIComponent(state.recorderDevice)}&since=${(fromMs / 1000).toFixed(3)}&limit=8000`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const reads = ((await r.json()).reads || []).filter(x => x.ts * 1000 < until);
+    e.seed(reads);
+    if (state.view) state.view.all();
+  } catch (_) { /* no recorder here: history starts when the panel opened */ }
+}
+
+async function startEverything(want) {
+  if (!state.write) return;
+  const api = await sdkOf(want);
+  state.every = new Everything({ model: want.model, sdk: sdkIndex(api || {}) });
+  state.who = { model: want.model, serial: want.serial, resource: want.resource };
+  state.recorderDevice = recorderDevice(state.write);
+  state.seededFrom = Date.now();
+  state.panel.pages.push({ id: EVERY_IN, name: 'EVERYTHING IN' }, { id: EVERY_TIME, name: 'EVERYTHING OVER TIME' });
+  // ?page=EVERYTHING IN links straight to it.
+  const asked = want.page && state.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
+  if (asked) state.page = asked.id;
+  render();
+  const base = state.write.slice(0, -'/Write'.length);
+  const link = state.bus;
+  if (link) {
+    link.subscribe(`${base}/Reply`, (_t, text) => {
+      let env = null;
+      try { env = JSON.parse(text); } catch (_) { return; }
+      const touched = state.every.hear(env, Date.now());
+      if (touched.length && state.view) state.view.update(touched);
+    });
+    // KOMAND's named readings: each says which question it answers (retained:
+    // the last of each arrives at once, with its own time).
+    link.subscribe(`${base}/Reading/#`, (t, text) => {
+      const touched = state.every.takeReading(t.slice(base.length + 1), text, Date.now());
+      if (touched.length && state.view) state.view.update(touched);
+    });
+    // The box's status record: not connected is offline, a gap in every line.
+    link.subscribe(base, (_t, text) => {
+      let rec = null;
+      try { rec = JSON.parse(text); } catch (_) { return; }
+      if (rec && String(rec.connected) === '0') { state.every.gap(Date.now()); if (state.view) state.view.all(); }
+    });
+  }
+  seedBack(Date.now() - 10 * 60 * 1000);
 }
 
 /* ---------------------------------------------------------------- inside a host
@@ -596,6 +683,7 @@ async function start() {
   setInterval(busState, 2000);
   render();
   listen();
+  startEverything(want);
   if (host.get('frame')) showFrame(host.get('frame'));
   tellHost('apk:run-ready');
 }

@@ -537,7 +537,8 @@ export const CONTROL_DEFINITIONS = {
           mantissa = 10;
           scaleMultText = 'OVERLOAD';
         } else {
-          const scaleExp = Math.floor(Math.log10(abs));
+          // A caller that holds the range steady (Everything in: stickyDecade) names the decade.
+          const scaleExp = Number.isFinite(b.decade) ? b.decade : Math.floor(Math.log10(abs));
           mantissa = abs / Math.pow(10, scaleExp);
           if (scaleExp !== 0) {
             scaleMultText = scaleExp === 1 ? '×10' : scaleExp === 2 ? '×100' : scaleExp === 3 ? '×1k' : scaleExp === 6 ? '×1M' : scaleExp === -3 ? '×1m' : `×10^${scaleExp}`;
@@ -599,7 +600,9 @@ export const CONTROL_DEFINITIONS = {
 
       const needleRot = -38 + (clampedMantissa / 10) * 76;
       const needleLen = R + 4;
-      const displayVal = c.value !== undefined && c.value !== null && c.value !== '' ? c.value : '—';
+      // `shown`: the caller's own words for the value (engineering prefix and unit); the needle reads `value`.
+      const displayVal = c.shown != null && c.shown !== '' ? c.shown
+        : c.value !== undefined && c.value !== null && c.value !== '' ? c.value : '—';
 
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; overflow:hidden; ${box('#efe3bd', '#3b3325', '6px')}">
@@ -618,7 +621,7 @@ export const CONTROL_DEFINITIONS = {
             <text x="14" y="148" font-size="10" font-weight="700" fill="#222">${esc(c.label || 'READING')}</text>
             <text x="246" y="148" text-anchor="end" font-family="monospace" font-size="10" font-weight="700" fill="#222">${esc(displayVal)}</text>
             <g style="transform-origin: ${cx}px ${cy}px; transform: rotate(${needleRot.toFixed(1)}deg); transition: transform 0.2s ease-out;">
-              <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - needleLen}" stroke="#111" stroke-width="2" stroke-linecap="round" filter="url(#needle-shadow)"/>
+              <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - needleLen}" stroke="${c.needle ? esc(c.needle) : '#111'}" stroke-width="${c.needle ? 2.5 : 2}" stroke-linecap="round" filter="url(#needle-shadow)"/>
             </g>
             <circle cx="${cx}" cy="${cy}" r="11" fill="#1e222b" stroke="#3b3325" stroke-width="2"/>
             <circle cx="${cx}" cy="${cy}" r="4" fill="#f59e0b"/>

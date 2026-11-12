@@ -49,6 +49,38 @@
       background: var(--osc-bg-surface-hover, #1c2230); color: inherit; border: 1px solid var(--osc-border-default, #2e3442); }
     .pop button.go { background: var(--osc-accent-primary, #38bdf8); color: #031018; border-color: transparent; }
     .pop .hint { font-size: 11px; color: var(--osc-text-subtle, #64748b); margin-top: 8px; font-family: monospace; word-break: break-all; }
+    /* EVERYTHING IN / EVERYTHING OVER TIME (js/everythingView.js): pages drawn inside the glass. */
+    .ev-page { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; box-sizing: border-box; }
+    .ev-head { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--osc-text-muted, #94a3b8); flex: none; }
+    .ev-head b { color: var(--osc-text-primary, #e2e8f0); letter-spacing: .06em; }
+    .ev-why { flex: 1; font-size: 11px; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ev-btn { font: inherit; font-size: 11px; padding: 3px 9px; border-radius: 4px; cursor: pointer; background: transparent;
+      color: var(--osc-text-muted, #94a3b8); border: 1px solid var(--osc-border-default, #2e3442); }
+    .ev-btn:hover, .ev-btn.on { color: var(--osc-text-primary, #fff); border-color: var(--osc-accent-primary, #38bdf8); }
+    .ev-seg { display: inline-flex; gap: 2px; }
+    .ev-empty { padding: 30px; color: var(--osc-text-muted, #94a3b8); }
+    .ei-grid { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 8px; align-content: start; }
+    .ei-tile { position: relative; background: #0d1015; border: 1px solid var(--osc-border-default, #2e3442); border-top: 3px solid var(--tone, #38bdf8);
+      border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; min-height: 150px; transition: opacity .3s, filter .3s; }
+    .ei-name { font-size: 12px; font-weight: 700; color: var(--tone, #e2e8f0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ei-meter { height: 112px; }
+    .ei-word { flex: 1; display: flex; align-items: center; justify-content: center; font: 700 22px monospace; color: var(--osc-text-primary, #e2e8f0);
+      word-break: break-all; text-align: center; }
+    .ei-foot { display: flex; justify-content: space-between; gap: 6px; font: 10px monospace; color: var(--osc-text-subtle, #64748b); }
+    .ei-scpi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Haze until proven: 5 min unproven, or the unit offline, and the tile greys. */
+    .ei-tile.is-haze { opacity: .45; filter: grayscale(.8) blur(.3px); }
+    .ei-tile.is-offline .ei-meter { opacity: .35; }
+    .ei-tile.is-tick { animation: ei-tick .6s ease-out 1; }
+    @keyframes ei-tick { from { box-shadow: 0 0 0 2px var(--tone, #38bdf8); } to { box-shadow: none; } }
+    .et-wrap { flex: 1; min-height: 0; overflow: auto; position: relative; cursor: grab; touch-action: none; }
+    .et-canvas { display: block; width: 100%; }
+    .et-cursor { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.55); pointer-events: none; }
+    .et-read { position: absolute; top: 4px; width: 230px; max-height: 90%; overflow: hidden; pointer-events: none; font: 11px monospace;
+      background: #000d; border: 1px solid var(--osc-border-default, #2e3442); border-radius: 6px; padding: 6px; }
+    .et-read div { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+    .et-read i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+    .et-read span { margin-left: auto; color: #fff; }
     .say { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #000c; padding: 8px 14px; border-radius: 6px; font-size: 12px; }
     .say:empty { display: none; }
   </style>
@@ -72,6 +104,8 @@
   <script src="./vendor/apk-contracts/apk-contracts.global.js"></script>
   <script src="/FrontEnd/shared/apk-bus.js"></script>
   <script src="./vendor/apk-softapp/apk-softapp.js"></script>
+  <script src="./vendor/apk-table/apk-table.js"></script>
+  <script src="./vendor/apk-graph-puck/apk-graph-puck.js"></script>
   <script type="module" src="./js/runner.js"></script>
 </body>
 </html>
