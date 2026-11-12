@@ -4,7 +4,7 @@
 /* TouchPanelApp, part: Pages and device tabs: which page a control is on, the tab strips, the shareable link.
    Mixed into TouchPanelApp.prototype by js/touchPanelApp.js (ROAD-3766). */
 
-import { linkQuery, linkSearch, wantFor, arrivals } from '../devicePanel.js';
+import { linkQuery, linkSearch, wantFor, arrivals, deviceOptions } from '../devicePanel.js';
 import { esc } from './common.js';
 
 export class TouchPanelPages {
@@ -54,15 +54,25 @@ export class TouchPanelPages {
     if (this.engineView === 'home' && !document.getElementById('engine-preview')?.hidden) this.renderEngineNav();
   }
 
+  /* The device tabs show as ONE picker in the header (owner 2026-11-12: the
+     cloud of chips above the page tabs ate a third of the glass). Same list,
+     same labels, ● online / ○ offline; picking one does what clicking its tab
+     did (openDevice). A fresh arrival not yet opened makes the picker pulse. */
   renderDeviceTabs() {
-    const el = document.getElementById('device-tabs');
-    if (!el || !this.deviceTabs) return;
-    el.innerHTML = [...this.deviceTabs].map(([k, t]) => `
-      <div class="device-tab ${k === this.activeTab ? 'on' : ''} ${t.gone ? 'gone' : ''} ${t.fresh && k !== this.activeTab ? 'fresh' : ''}"
-           data-key="${esc(k)}" title="${esc(t.d.name || k)}${t.gone ? ' · offline' : ' · online'}">
-        <span class="dt-dot"></span>${esc(t.d.model)}${t.want.serial ? ` <span class="pt-n">${esc(t.want.serial)}</span>` : ''}
-      </div>`).join('');
-    el.querySelectorAll('.device-tab').forEach(t => t.addEventListener('click', () => this.openDevice(t.dataset.key)));
+    const sel = document.getElementById('device-picker');
+    if (!sel || !this.deviceTabs) return;
+    const { options, selected } = deviceOptions(this.deviceTabs, this.activeTab);
+    sel.innerHTML = options.map(o => `<option value="${esc(o.value)}" title="${esc(o.title)}"${o.gone ? ' class="gone"' : ''}>${esc(o.label)}</option>`).join('');
+    sel.value = selected;
+    sel.hidden = !options.length;
+    const cur = options.find(o => o.value === selected);
+    sel.title = cur && cur.value ? cur.title : 'Every device online on the bench: each joins this list as it comes online';
+    sel.classList.toggle('gone', !!(cur && cur.gone));
+    sel.classList.toggle('fresh', options.some(o => o.fresh));
+    if (!sel.dataset.wired) {
+      sel.dataset.wired = '1';
+      sel.addEventListener('change', () => { if (sel.value) this.openDevice(sel.value); });
+    }
   }
 
   async openDevice(key) {

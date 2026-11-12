@@ -800,3 +800,23 @@ export function tabbable(bench) {
 export function arrivals(bench, tabs) {
   return tabbable(bench).filter(d => !tabs.has(d.key));
 }
+
+/** The header's device picker (it replaced the cloud of device tabs): one option
+    per tab, labelled as the tab was (model + serial), online ones marked ●,
+    offline ones ○ and "offline". `selected` is the open tab; with none open the
+    list leads with a blank "choose" option so no box looks opened. */
+export function deviceOptions(tabs, activeKey = '') {
+  const list = [...(tabs || new Map())].map(([key, t]) => {
+    const model = (t && t.d && t.d.model) || key;
+    const serial = (t && t.want && t.want.serial) || '';
+    const gone = !!(t && t.gone);
+    return {
+      value: key, gone, fresh: !!(t && t.fresh) && key !== activeKey,
+      label: `${gone ? '○' : '●'} ${model}${serial ? ` ${serial}` : ''}${gone ? ' · offline' : ''}`,
+      title: `${(t && t.d && t.d.name) || key}${gone ? ' · offline' : ' · online'}`,
+    };
+  });
+  const selected = list.some(o => o.value === activeKey) ? activeKey : '';
+  if (!selected && list.length) list.unshift({ value: '', gone: false, fresh: false, label: `Choose a device (${list.length})…`, title: '' });
+  return { options: list, selected };
+}

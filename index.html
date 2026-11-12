@@ -133,18 +133,13 @@
     .page-tab .pt-x { color: var(--osc-text-muted); font-size: 10px; }
     .page-tab .pt-x:hover { color: var(--osc-status-danger); }
     .page-tab .pt-edit { width: 110px; font-size: 11px; background: var(--osc-bg-base, #111); color: var(--osc-text-primary); border: 1px solid var(--osc-accent-primary); }
-    .device-tabs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; margin-bottom: 6px; }
-    .device-tabs:empty { display: none; }
-    .device-tab {
-      display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: pointer; user-select: none;
-      font-size: 11px; font-weight: 600; color: var(--osc-text-muted); white-space: nowrap;
-      background: var(--osc-bg-surface); border: 1px solid var(--osc-border-default); border-radius: 12px;
-    }
-    .device-tab.on { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); }
-    .device-tab .dt-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; }
-    .device-tab.gone { opacity: 0.45; }
-    .device-tab.gone .dt-dot { background: #64748b; }
-    .device-tab.fresh { animation: dt-fresh 1.2s ease-out 3; }
+    /* The header's device picker (was the cloud of device tabs). */
+    .device-picker { max-width: 380px; text-transform: none; font-family: monospace; cursor: pointer; }
+    .device-picker:focus-visible { outline: 2px solid var(--osc-accent-primary); outline-offset: 1px; }
+    .device-picker.gone { color: var(--osc-text-muted); }
+    .device-picker option { color: var(--osc-text-primary); background: var(--osc-bg-input); }
+    .device-picker option.gone { color: var(--osc-text-muted); }
+    .device-picker.fresh { animation: dt-fresh 1.2s ease-out 3; }
     @keyframes dt-fresh { 50% { box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.45); } }
     .page-add { background: none; border: 1px dashed var(--osc-border-default); color: var(--osc-text-muted); border-radius: 6px 6px 0 0; padding: 4px 10px; cursor: pointer; }
     .page-add:hover { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); }
@@ -667,6 +662,7 @@
       <span class="window-dot"></span>
       <span class="window-title">Touch Panel & Control Surface Designer</span>
       <span class="window-pill" id="block-tag">STANDALONE BLOCK EDITOR</span>
+      <select class="window-pill device-picker" id="device-picker" hidden aria-label="Device"></select>
       <select class="window-pill" id="placement-picker" hidden title="This box's panels: the one saved for it, and each one it presents (Instruments tab, Device Consoles…)"></select>
     </div>
     <div class="window-actions">
@@ -733,7 +729,6 @@
       </aside>
 
       <main class="canvas-stage" id="canvas-stage">
-        <div class="device-tabs" id="device-tabs" title="Every device online on the bench: it gets a tab as it comes online"></div>
         <div style="display:flex; align-items:flex-end; gap:8px; max-width:100%;">
           <div class="page-tabs" id="page-tabs"></div>
           <button class="verb-chip" id="btn-engine-glass" title="Draw the page with the real widget engine (the controls stay editable on top)">⚙ Engine glass</button>
