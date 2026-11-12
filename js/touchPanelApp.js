@@ -1867,11 +1867,13 @@ export class TouchPanelApp {
     for (const c of this.stageEl.children) {
       if (c === this.glassFitEl || c.hidden || getComputedStyle(c).position === 'absolute') continue;
       if (!c.offsetHeight) continue;
-      above += c.offsetHeight + gap;
+      const m = getComputedStyle(c);
+      above += c.offsetHeight + parseFloat(m.marginTop) + parseFloat(m.marginBottom) + gap;
     }
-    // The scale note sits on the stage's bottom edge.
+    // The scale note sits on the stage's bottom edge; 2 px spare so rounding
+    // never tips the stage into scroll bars.
     const note = this.glassScaleEl ? this.glassScaleEl.offsetHeight + 4 : 0;
-    return { w: Math.max(100, this.stageEl.clientWidth - padX), h: Math.max(100, this.stageEl.clientHeight - padY - above - note) };
+    return { w: Math.max(100, this.stageEl.clientWidth - padX - 2), h: Math.max(100, this.stageEl.clientHeight - padY - above - note - 2) };
   }
 
   // The glass is drawn at its true resolution and scaled to fit the stage, so

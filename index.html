@@ -74,6 +74,9 @@
       justify-content: safe center;
       padding: 16px;
       overflow: auto;
+      /* The scroll bar's room is always kept, so a page taller than the stage
+         does not narrow it (and tip a fit-the-window page into side-scrolling). */
+      scrollbar-gutter: stable;
     }
 
     .touchpanel-bezel {
