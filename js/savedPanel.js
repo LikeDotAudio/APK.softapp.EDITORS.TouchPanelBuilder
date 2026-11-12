@@ -16,6 +16,35 @@
    Pure helpers plus two small bus calls; the tests feed it a fake link. */
 
 import { brokerFor } from './runPanel.js';
+import { panelToFrame, frameKey } from './frameExport.js';
+
+/** The panel in the device's own frame form, one frame per source frame (the
+    pages that came from it, overflow pages too), else one per page:
+    [{ path, content }]. The OS shows these in the device's window in place of
+    its template's (OS Apps/Frames/bus-panels withSavedTouchPanel), so what was
+    edited is what the window shows. */
+export function framesOf(panel) {
+  const p = panel || {};
+  const pages = Array.isArray(p.pages) ? p.pages : [];
+  const groups = new Map();
+  pages.forEach((pg, i) => {
+    const src = pg && pg.source;
+    const path = (src && src.path) || `${i}_${frameKey(pg.name, 'Page')}/0_${frameKey(pg.name, 'Page')}.json`;
+    if (!groups.has(path)) groups.set(path, { pages: [], src });
+    groups.get(path).pages.push(pg);
+  });
+  const out = [];
+  for (const [path, g] of groups) {
+    const ids = new Set(g.pages.map(pg => pg.id));
+    const one = { ...p, pages: g.pages, widgets: (p.widgets || []).filter(w => ids.has(w.page)) };
+    const doc = panelToFrame(one);
+    const bin = Object.values(doc)[0];
+    if (g.src && g.src.card) bin.card = { ...g.src.card };
+    const root = (g.src && g.src.root) || Object.keys(doc)[0];
+    out.push({ path, content: { [root]: bin } });
+  }
+  return out;
+}
 /** The identity a saved panel is filed under: serial, else the presented key. Never an IP. */
 export function savedIdentity(panel, link) {
   const real = (s) => { const v = String(s ?? '').trim(); return v && !/^0+$/.test(v) ? v : ''; };
@@ -35,9 +64,12 @@ export function savedDoc(panel, link, now = new Date()) {
     kind: 'touch_panel',
     saved_at: now.toISOString(),
     link: { ...(link || {}) },
+    // The placement it was edited from, and the panel as frames for it.
+    placement: p.sourcePlacement || (link && link.placement) || 'Instruments',
+    frames: framesOf(p),
     block: {
       id: p.id, name: p.name, room: p.room, width: p.width, height: p.height, screenPreset: p.screenPreset,
-      theme: p.theme, deviceId: p.deviceId, pages: p.pages, widgets: p.widgets,
+      theme: p.theme, deviceId: p.deviceId, sourcePlacement: p.sourcePlacement, pages: p.pages, widgets: p.widgets,
     },
   };
 }

@@ -200,12 +200,50 @@ function buttonFace(kind, label, icon) {
   }
 }
 
-const shownValue = (c, fallback) => {
+/* NOTHING UNPROVEN IS SHOWN CRISP (haze-until-proven). A value is the live
+   one, or the panel's own words (behavior.default); otherwise the control
+   wears the haze and says "—", never a made-up "1000 Hz" a person would read
+   as the instrument. */
+export const HAZE = '<span class="tp-haze" title="No reading proven yet — nothing is invented">—</span>';
+const shownValue = (c) => {
   const b = c.behavior || {};
-  if (c.value !== undefined && c.value !== null && c.value !== '') return c.value;
-  if (b.default !== undefined && b.default !== '') return `${b.default}${b.unit ? ' ' + b.unit : ''}`;
-  return fallback;
+  if (c.value !== undefined && c.value !== null && c.value !== '' && c.value !== '—') return esc(c.value);
+  if (b.default !== undefined && b.default !== '') return esc(`${b.default}${b.unit ? ' ' + b.unit : ''}`);
+  return HAZE;
 };
+
+/* The words of a frame label ({En}, {text:{En}}, {inactive:{text}}), or ''. */
+function words(l) {
+  if (l == null) return '';
+  if (typeof l === 'string' || typeof l === 'number') return String(l);
+  if (typeof l === 'object') {
+    if (l.inactive || l.active) return words(l.inactive || l.active);
+    if ('text' in l) return words(l.text);
+    return words(l.En ?? Object.values(l).find(v => typeof v === 'string'));
+  }
+  return '';
+}
+
+/* A toggler's options in order, from the frame field it carries. */
+function optionList(field) {
+  const o = field && field.options;
+  if (!o || typeof o !== 'object') return [];
+  const list = Array.isArray(o) ? o.map((v, i) => [String(i + 1), v]) : Object.entries(o);
+  return list.filter(([, v]) => v && v.value != null)
+    .sort(([a], [b]) => (Number(a) - Number(b)) || String(a).localeCompare(String(b)))
+    .map(([, v]) => ({ value: String(v.value), label: words(v.label) || String(v.value) }));
+}
+
+/* The frame's own button colours (field.style.active / inactive), else the panel's. */
+function faceOf(field, on) {
+  const st = (field && field.style && field.style[on ? 'active' : 'inactive']) || {};
+  return {
+    bg: st.bg_color || (on ? '#000000' : '#2b2b2b'),
+    fg: st.text_color || (on ? '#FF9900' : '#888888'),
+    border: st.border_color || (on ? '#FF9900' : '#555555'),
+    bw: Number(st.border_thickness) || 2,
+  };
+}
 
 const box = (bg, border, radius) =>
   `background:${V('bg', bg)}; border:${V('bw', '1px')} solid ${V('border', border)}; border-radius:${V('radius', radius)}; box-shadow:${V('shadow', 'none')};`;
@@ -245,7 +283,7 @@ export const CONTROL_DEFINITIONS = {
         <div style="width:100%; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px; padding:8px 0; ${box('#181b22', '#333948', '6px')}">
           <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '400')}; color:${V('text', '#94a3b8')};">${c.label || 'LEVEL'}</span>
           ${track}
-          <span style="font-size:9px; color:${V('accent', '#38bdf8')}; font-family:monospace;">${shownValue(c, '-6 dB')}</span>
+          <span style="font-size:9px; color:${V('accent', '#38bdf8')}; font-family:monospace;">${shownValue(c)}</span>
         </div>`;
     }
   },
@@ -333,6 +371,70 @@ export const CONTROL_DEFINITIONS = {
         </div>`;
     }
   },
+  /* A row of crosspoint buttons — ONE control bound to an ARRAY of elements:
+     each button is its own connection (its channel in the command's argument),
+     drawn with its label and its channel number the way the device window
+     draws the frame (_GuiButtonToggler with options). Lit only when a reading
+     proves it closed; never in the editor. */
+  crosspoints: {
+    type: 'crosspoints',
+    name: 'Crosspoint Buttons',
+    icon: '🔀',
+    w: 640,
+    h: 56,
+    // Sized by the engine's own rules (ButtonToggler.jsx, FieldComponent's
+    // toggler branch): a grid of max_cols equal columns, shrunk to its content
+    // and centred, padx/pady gaps (5 when unset or 0), 10px padding, each button
+    // layout.height tall — so a wire leaves from the button the engine draws.
+    render(c) {
+      const f = c.field || {};
+      const lay = f.layout || {};
+      const opts = optionList(f);
+      const list = opts.length ? opts : Array.from({ length: 8 }, (_, i) => ({ value: String(i + 1), label: `Point ${i + 1}` }));
+      const cols = Math.max(1, parseInt(lay.max_cols || 4, 10));
+      const gx = parseInt(lay.padx || 5, 10);
+      const gy = parseInt(lay.pady || 5, 10);
+      const bh = typeof lay.height === 'number' ? lay.height : 50;
+      const face = faceOf(f, false);
+      const fs = (f.style && f.style.inactive && f.style.inactive.font_size) || 11;
+      const cells = list.map(o => `<div class="tp-el" data-el="${esc(o.value)}" title="${esc(o.label)} · ${esc(o.value)}"
+          style="box-sizing:border-box; height:${bh}px; display:flex; align-items:center; justify-content:center; text-align:center; white-space:pre;
+          background:${face.bg}; color:${face.fg}; border:${face.bw}px solid ${face.border}; border-radius:${Number(lay.corner_radius) || 6}px; font-size:${fs}px; line-height:1.1;">${esc(o.label)}
+(${esc(o.value)})</div>`).join('');
+      return `<div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center;">
+        <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:${gy}px ${gx}px; padding:10px; border-radius:5px; border:1px solid #444; background:#222;">${cells}</div></div>`;
+    }
+  },
+  /* A crosspoint matrix — buses down, sources across, every cell its own
+     channel (slot*100 + bus*10 + source), laid out by CrossMatrix.jsx's own
+     sizes (name_width, cell width × height, 6px gaps) so a wire leaves from
+     the cell the engine draws. */
+  matrix: {
+    type: 'matrix',
+    name: 'Crosspoint Matrix',
+    icon: '▦',
+    w: 720,
+    h: 180,
+    render(c) {
+      const f = c.field || {};
+      const buses = Array.isArray(f.buses) && f.buses.length ? f.buses : [{ label: 'BUS 1' }, { label: 'BUS 2' }];
+      const sources = Array.isArray(f.sources) && f.sources.length ? f.sources : [{ label: 'SRC 1' }, { label: 'SRC 2' }, { label: 'SRC 3' }, { label: 'SRC 4' }];
+      const cell = f.cell || {};
+      const cw = Number(cell.width) || 150; const chh = Number(cell.height) || 34; const nw = Number(cell.name_width) || 190;
+      const slot = Number(f.slot) || 0;
+      const face = faceOf(f, false);
+      const ch = (b, s2) => String(slot * 100 + (b + 1) * 10 + (s2 + 1)).padStart(3, '0');
+      const head = `<div style="display:flex; align-items:flex-end; gap:6px; margin-bottom:4px;">
+          <div style="width:${nw}px; flex-shrink:0; color:#666; font-size:10px;">${esc(words(f.corner) || 'BUS \\ SOURCE')}</div>
+          ${sources.map((src, i) => `<div style="width:${cw}px; flex-shrink:0; text-align:center; color:#ccc; font-size:11px; font-weight:bold; border-bottom:1px solid #444; padding-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(words(src.label))}<div style="color:#666; font-weight:normal; font-size:9px;">Ø${i + 1}</div></div>`).join('')}</div>`;
+      const rows = buses.map((bus, b) => `<div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
+          <div style="width:${nw}px; flex-shrink:0; color:#ccc; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(words(bus.label))} <span style="color:#666;">row ${(b + 1) * 10}</span></div>
+          ${sources.map((_, s2) => `<div class="tp-el" data-el="${ch(b, s2)}" title="${esc(words(bus.label))} ← ${esc(words(sources[s2].label))} · ${ch(b, s2)}"
+            style="box-sizing:border-box; width:${cw}px; height:${chh}px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:${face.bg}; color:${face.fg};
+            border:${face.bw}px solid ${face.border}; border-radius:6px; font-size:11px;">${ch(b, s2)}</div>`).join('')}</div>`).join('');
+      return `<div style="width:100%; height:100%; box-sizing:border-box; padding:4px 6px; overflow:hidden;">${head}${rows}</div>`;
+    }
+  },
   readout: {
     type: 'readout',
     name: 'Digital Readout',
@@ -343,7 +445,7 @@ export const CONTROL_DEFINITIONS = {
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; ${box('#0a0d12', '#222938', '4px')} padding:6px 10px; display:flex; justify-content:space-between; align-items:center;">
           <span style="font-size:9px; color:${V('text', '#64748b')};">${c.label || 'FREQ'}</span>
-          <span style="font-size:${V('fs', '14px')}; font-family:monospace; color:${V('accent', '#38bdf8')}; font-weight:${V('fw', '700')};">${shownValue(c, '1000 Hz')}</span>
+          <span style="font-size:${V('fs', '14px')}; font-family:monospace; color:${V('accent', '#38bdf8')}; font-weight:${V('fw', '700')};">${shownValue(c)}</span>
         </div>`;
     }
   },
@@ -364,7 +466,7 @@ export const CONTROL_DEFINITIONS = {
               <div style="position:absolute; left:15px; top:2px; width:3px; height:12px; background:#111; border-radius:1px;"></div>
             </div>
           </div>
-          <span style="font-size:9px; color:${V('accent', '#38bdf8')}; font-family:monospace;">${shownValue(c, '-4 dB · L20')}</span>
+          <span style="font-size:9px; color:${V('accent', '#38bdf8')}; font-family:monospace;">${shownValue(c)}</span>
         </div>`;
     }
   },

@@ -58,6 +58,9 @@ const FRAME_TO_CONTROL = {
   _CMDP: 'cmdp',
   _HighVisButton: 'tile',
   _GuiTrendChart: 'trace',
+  _GuiMatrix: 'matrix',
+  _CrossMatrix: 'matrix',
+  CrossMatrix: 'matrix',
 };
 const CONTAINERS = new Set(['OcaBin', 'OcaBlock']);
 
@@ -85,12 +88,14 @@ const SECTION = { rig: 'RIG', nab: 'NAB' };
 
 /**
  * Lay items out on pages of W×H glass, packed: blocks share a row when they fit
- * (a wider gap marks where one ends), a full row wraps, a full page runs on
+ * (a wider gap marks where one ends; with rowPerBand each block starts its own
+ * row and nothing is enlarged — a presented frame, drawn at its own sizes), a
+ * full row wraps, a full page runs on
  * over "<name> 2". A page that ends up sparse is enlarged (≤ MAX_GROW) to fill
  * the glass, so a dozen controls are not a strip across the top of a screen.
  * items: [{ widget, w, h, band }] -> pushes pages, sets widget x/y/w/h/page.
  */
-function pack(items, name, W, H, pages) {
+function pack(items, name, W, H, pages, rowPerBand = false) {
   if (!items.length) return;
   let more = 1;
   let page = { id: `p${pages.length + 1}`, name, members: [] };
@@ -98,8 +103,10 @@ function pack(items, name, W, H, pages) {
   const all = [page];
   let x = MARGIN; let y = MARGIN; let rowH = 0; let band = null;
   for (const it of items) {
-    const sep = band !== null && it.band !== band && x > MARGIN ? GAP * 2 : 0;
-    if (x + sep + it.w > W - MARGIN && x > MARGIN) { x = MARGIN; y += rowH + GAP; rowH = 0; }
+    const newBand = band !== null && it.band !== band && x > MARGIN;
+    const sep = newBand ? GAP * 2 : 0;
+    // A frame's block starts its own row, as the device window draws it.
+    if ((rowPerBand && newBand) || (x + sep + it.w > W - MARGIN && x > MARGIN)) { x = MARGIN; y += rowH + GAP; rowH = 0; }
     else x += sep;
     band = it.band;
     if (y + it.h > H - MARGIN && y > MARGIN) {
@@ -114,7 +121,7 @@ function pack(items, name, W, H, pages) {
   for (const pg of all) {
     const right = Math.max(...pg.members.map(w => w.x + w.w));
     const bottom = Math.max(...pg.members.map(w => w.y + w.h));
-    const k = Math.min((W - MARGIN) / right, (H - MARGIN) / bottom, MAX_GROW);
+    const k = rowPerBand ? 1 : Math.min((W - MARGIN) / right, (H - MARGIN) / bottom, MAX_GROW);
     if (k > 1.05) {
       for (const w of pg.members) {
         w.x = Math.round(w.x * k); w.y = Math.round(w.y * k);
@@ -128,7 +135,49 @@ function pack(items, name, W, H, pages) {
 /** The control type for one frame field. Anything that only shows a value is a readout. */
 export function controlFor(field) {
   const t = field && field.type;
+  // A toggler that holds options is an ARRAY of buttons, each its own element
+  // (the 3235's crosspoints: one button per channel), not one button.
+  if (t === '_GuiButtonToggler' && optionsOf(field).length) return 'crosspoints';
   return FRAME_TO_CONTROL[t] || 'readout';
+}
+
+/* ------------------------------------------------- connections, per element
+
+   A control bound to an ARRAY of elements is not one connection. A row of
+   crosspoint buttons sends Close_Channels with each button's own channel; a
+   crosspoint matrix sends Close_Channels / Open_Channels with each cell's
+   channel. Every element is its own wire (owner, 2026-11-11: "show all the
+   connections... even when they are an array of elements"), so a binding
+   carries `elements: [{ value, label }]` — what that element hands the
+   command's argument. The editor reads the connection to pick the control
+   and to draw it. */
+
+/** A toggler's options, in order: [{ value, label, about }]. */
+export function optionsOf(field) {
+  const o = field && field.options;
+  if (!o || typeof o !== 'object') return [];
+  const list = Array.isArray(o) ? o.map((v, i) => [String(i + 1), v]) : Object.entries(o);
+  return list
+    .filter(([, v]) => v && typeof v === 'object' && v.value != null)
+    .sort(([a], [b]) => (Number(a) - Number(b)) || String(a).localeCompare(String(b)))
+    .map(([, v]) => ({ value: String(v.value), label: fieldLabel('', v) || String(v.value), about: text(v.description) }));
+}
+
+/** A crosspoint matrix's cells: channel = slot*100 + bus*10 + source (CrossMatrix.jsx,
+    straight off the module schematic), bus and source counted from 1. */
+export function matrixCells(field) {
+  const slot = Number(field && field.slot) || 0;
+  const buses = Array.isArray(field && field.buses) ? field.buses : [];
+  const sources = Array.isArray(field && field.sources) ? field.sources : [];
+  const out = [];
+  buses.forEach((bus, b) => sources.forEach((src, s) => {
+    out.push({
+      value: String(slot * 100 + (b + 1) * 10 + (s + 1)).padStart(3, '0'),
+      label: `${fieldLabel('', bus)} ← ${fieldLabel('', src)}`,
+      bus: b, source: s,
+    });
+  }));
+  return out;
 }
 
 function text(v) {
@@ -212,20 +261,6 @@ function pageName(path, content) {
   return dir.replace(/^\d+_/, '').replace(/_/g, ' ').trim().toUpperCase() || 'PAGE';
 }
 
-/* Every leaf of a frame, depth first, with the top-level block it sits in. */
-function leaves(node, band, out) {
-  for (const [key, f] of Object.entries(node || {})) {
-    if (!f || typeof f !== 'object') continue;
-    if (CONTAINERS.has(f.type)) {
-      leaves(f.blocks || {}, band ?? key, out);
-      leaves(f.fields || {}, band ?? key, out);
-    } else if (typeof f.type === 'string') {
-      out.push({ key, field: f, band: band ?? key });
-    }
-  }
-  return out;
-}
-
 /* Frame types a person types into: their control sends the text. */
 const TEXT_FIELDS = new Set(['_TextInput', '_GuiTextInput', '_SmartInput']);
 
@@ -268,8 +303,95 @@ export function bindingOf(field, device = {}, deviceKey = '') {
   };
 }
 
+/** How many connections a control has: one per plain binding, one per element
+    of an array binding (8 crosspoint buttons on Close_Channels = 8). */
+export function connectionCount(widget) {
+  return ((widget && widget.bindings) || [])
+    .reduce((n, b) => n + (Array.isArray(b && b.elements) && b.elements.length ? b.elements.length : 1), 0);
+}
+
+/** Every element wired to one variable, across the panel's controls:
+    [{ widget, value, label }] in control order. */
+export function elementConnections(widgets, variableId) {
+  const out = [];
+  for (const w of widgets || []) {
+    for (const b of (w && w.bindings) || []) {
+      if (!b || b.id !== variableId || !Array.isArray(b.elements)) continue;
+      for (const e of b.elements) out.push({ widget: w, value: String(e.value), label: String(e.label || e.value) });
+    }
+  }
+  return out;
+}
+
+/* Frame keys a field names its siblings by (CrossMatrix: `opens` / `closes`). */
+const SIBLING_REFS = ['opens', 'closes'];
+
+/* A field whose value is its own text: no topic, no reading, no command. Its
+   value_default is the panel's words (the Device header), not a measurement. */
+function isStatic(field) {
+  return !field.topic && !field.komand_listen_topic && !field.komand_readout
+    && !field.device_state && !(field.komand_handler && field.komand_handler.command);
+}
+
+/* "40%" of a row, or null. */
+function pctOf(v) {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(String(v ?? ''));
+  return m ? Math.max(1, Math.min(100, Number(m[1]))) / 100 : null;
+}
+
+/* Every block of a frame in order: [{ block, fields: [[key, field]…] }], nested
+   blocks flattened under their top-level block's name. */
+function blocksOf(node, band, out) {
+  for (const [key, f] of Object.entries(node || {})) {
+    if (!f || typeof f !== 'object') continue;
+    if (CONTAINERS.has(f.type)) {
+      const here = { block: band ? `${band}/${key}` : key, fields: [] };
+      out.push(here);
+      for (const [k, v] of Object.entries(f.fields || {})) {
+        if (v && typeof v === 'object' && CONTAINERS.has(v.type)) blocksOf({ [k]: v }, here.block, out);
+        else if (v && typeof v === 'object' && typeof v.type === 'string') here.fields.push([k, v]);
+      }
+      blocksOf(f.blocks || {}, here.block, out);
+    } else if (typeof f.type === 'string') {
+      out.push({ block: band || 'Main', fields: [[key, f]] });
+    }
+  }
+  return out;
+}
+
+/* Glass size of a field drawn as the frame draws it. */
+function frameSize(type, field, rowW) {
+  const lay = field.layout || {};
+  const pct = pctOf(lay.width) ?? (typeof field.geometry?.width === 'number' && field.geometry.width <= 100 && pctOf(`${field.geometry.width}%`));
+  if (type === 'crosspoints') {
+    // The engine's toggler: max_cols columns (4 when unset), pady gaps (5 when
+    // unset or 0), 10px padding and a 1px border round layout.height buttons.
+    const n = optionsOf(field).length;
+    const cols = Math.max(1, parseInt(lay.max_cols || 4, 10));
+    const rows = Math.max(1, Math.ceil(n / cols));
+    const bh = typeof lay.height === 'number' ? lay.height : 50;
+    const gy = parseInt(lay.pady || 5, 10);
+    return [Math.round(rowW * (pct || 1)), rows * bh + (rows - 1) * gy + 22];
+  }
+  if (type === 'matrix') {
+    const cell = field.cell || {};
+    const cw = Number(cell.width) || 150; const ch = Number(cell.height) || 34; const nw = Number(cell.name_width) || 190;
+    // CrossMatrix.jsx: 6px side padding, 6px gaps, a ~34px title row, 3px under each bus row.
+    const w = 12 + nw + (cw + 6) * ((field.sources || []).length || 1);
+    const h = 8 + 34 + (ch + 3) * ((field.buses || []).length || 1);
+    return [Math.min(rowW, w), h];
+  }
+  if (type === 'readout' && pct) return [Math.round(rowW * pct) - GAP, SIZE.readout[1]];
+  return null;
+}
+
 /**
- * The starting touch panel for one presented device.
+ * The starting touch panel for one presented device: the panel the device
+ * window shows, page for page and control for control. Each frame is a page
+ * (named after its card when it declares one), each block starts a row, each
+ * field is one control that keeps its whole frame config (`field`) so it is
+ * exported back unchanged (frameExport widgetToField), and its connections —
+ * every element of an array included — are its bindings.
  * opts: { placement (name to prefer), width, height }
  * -> { name, deviceId, device, placement, placements: [at…], pages, widgets } or null.
  */
@@ -280,6 +402,7 @@ export function panelFromPresented(doc, opts = {}) {
   const device = doc.device || {};
   const W = opts.width || 1280;
   const H = opts.height || 800;
+  const rowW = W - 2 * MARGIN;
   const pages = [];
   const widgets = [];
   const sections = { rig: [], nab: [] };
@@ -294,40 +417,93 @@ export function panelFromPresented(doc, opts = {}) {
     if (bins.length > 1) bins.forEach(([k, b]) => sheets.push({ path: `${k}/${k}.json`, content: { [k]: b } }));
     else sheets.push(frame);
   });
+  const dirs = new Map();
+  sheets.forEach(f => { const d = pageName(f.path, f.content); dirs.set(d, (dirs.get(d) || 0) + 1); });
+  const nameOf = (frame) => {
+    const card = Object.values(frame.content || {}).map(v => v && v.card).find(c => c && c.name);
+    if (card) return String(card.name).toUpperCase();
+    const dir = pageName(frame.path, frame.content);
+    if (dirs.get(dir) < 2) return dir;
+    const file = String(frame.path || '').split('/').pop().replace(/\.json$/i, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim().toUpperCase();
+    return file ? `${dir} · ${file}` : dir;
+  };
+
+  const handlerBinding = (field, elements) => {
+    const binding = bindingOf(field, device, doc.key || '');
+    if (binding && elements && elements.length) binding.elements = elements.map(e => ({ value: e.value, label: e.label }));
+    return binding;
+  };
+
   sheets.forEach((frame) => {
     const items = [];
-    for (const { key, field, band } of leaves(frame.content, null, [])) {
-      const h0 = field.komand_handler || {};
-      const verb = h0.enable === false ? '' : h0.komand_type;
-      const sec = SECTION[verb] ? verb : '';
-      const type = sec || controlFor(field);
-      const horiz = type === 'fader' && /Horizontal/.test(field.type);
-      const args = sec ? (h0.args || field.args || []) : null;
-      const [w, h] = horiz ? SIZE.faderH : sizeOf(type, args);
-      const widget = {
-        id: `w_${++n}`,
-        type,
-        label: fieldLabel(key, field).toUpperCase(),
-        x: 0, y: 0, w, h,
-        page: '',
-        address: field.komand_listen_topic || (field.device_state && field.topic) || field.komand_handler?.target || (field.komand_readout || /identity/i.test(key) ? 'Reading/Read_IDN' : ''),
-        channel: 1,
-        bindings: [],
-      };
-      const direct = directOf(field);
-      if (direct) widget.direct = direct;
-      const behavior = sec ? { args } : behaviorOf(field, type);
-      if (Object.keys(behavior).length) widget.behavior = behavior;
-      if (behavior.subtitle) widget.subtitle = behavior.subtitle;
-      const binding = bindingOf(field, device, doc.key || '');
-      if (binding) widget.bindings.push(binding);
-      // The handler exactly as the frame carries it (converter, readback, input
-      // name): what the runner hands KOMAND when this control is touched.
-      if (binding) widget.komand = { ...field.komand_handler };
-      widgets.push(widget);
-      (sec ? sections[sec] : items).push({ widget, w, h, band });
+    for (const { block, fields } of blocksOf(frame.content, null, [])) {
+      const keys = new Set(fields.map(([k]) => k));
+      // Hidden fields carry a connection for a visible sibling (a matrix's
+      // Open_Cmd / Close_Cmd): they ride on the control that names them, else
+      // on the block's first visible control, and are exported with it.
+      const named = new Map();
+      for (const [k, f] of fields) for (const ref of SIBLING_REFS) if (typeof f[ref] === 'string' && keys.has(f[ref])) named.set(f[ref], k);
+      const visible = fields.filter(([, f]) => f.hidden !== true);
+      const carriers = new Map();
+      for (const [k, f] of fields) {
+        if (f.hidden !== true) continue;
+        const owner = named.get(k) || (visible[0] && visible[0][0]);
+        if (!owner) continue;
+        if (!carriers.has(owner)) carriers.set(owner, {});
+        carriers.get(owner)[k] = f;
+      }
+      for (const [key, field] of visible) {
+        const h0 = field.komand_handler || {};
+        const verb = h0.enable === false ? '' : h0.komand_type;
+        const sec = SECTION[verb] ? verb : '';
+        const type = sec || controlFor(field);
+        const horiz = type === 'fader' && /Horizontal/.test(field.type);
+        const args = sec ? (h0.args || field.args || []) : null;
+        const [w, h] = (!sec && frameSize(type, field, rowW)) || (horiz ? SIZE.faderH : sizeOf(type, args));
+        const label = fieldLabel(key, field).replace(/_/g, ' ').trim();
+        const widget = {
+          id: `w_${++n}`,
+          type,
+          label: label.toUpperCase(),
+          x: 0, y: 0, w, h,
+          page: '',
+          address: field.komand_listen_topic || (field.device_state && field.topic) || field.komand_handler?.target || (field.komand_readout || /identity/i.test(key) ? 'Reading/Read_IDN' : ''),
+          channel: 1,
+          bindings: [],
+        };
+        const direct = directOf(field);
+        if (direct) widget.direct = direct;
+        const behavior = sec ? { args } : behaviorOf(field, type);
+        // The panel's own words are its value; a reading is never invented.
+        if (!sec && isStatic(field) && field.value_default != null && field.value_default !== '') behavior.default = String(field.value_default);
+        if (Object.keys(behavior).length) widget.behavior = behavior;
+        if (behavior.subtitle) widget.subtitle = behavior.subtitle;
+        const carried = carriers.get(key) || null;
+        const elements = type === 'crosspoints' ? optionsOf(field) : type === 'matrix' ? matrixCells(field) : null;
+        const own = handlerBinding(field, elements);
+        if (own) widget.bindings.push(own);
+        for (const f of Object.values(carried || {})) {
+          const b = handlerBinding(f, elements);
+          if (b && !widget.bindings.some(x => x.id === b.id)) widget.bindings.push(b);
+        }
+        // The handler exactly as the frame carries it (converter, readback, input
+        // name): what the runner hands KOMAND when this control is touched.
+        if (own) widget.komand = { ...field.komand_handler };
+        // The frame field itself, whole: exported back as it came.
+        widget.field = JSON.parse(JSON.stringify(field));
+        widget.frame = { key, block, path: frame.path, label: widget.label };
+        if (carried) widget.frame.carried = JSON.parse(JSON.stringify(carried));
+        widgets.push(widget);
+        (sec ? sections[sec] : items).push({ widget, w, h, band: block });
+      }
     }
-    pack(items, pageName(frame.path, frame.content), W, H, pages);
+    const first = pages.length;
+    pack(items, nameOf(frame), W, H, pages, true);
+    // Where each page came from: the frame it is written back to on Save, and
+    // the card it declares (its Touch Points tile).
+    const card = Object.values(frame.content || {}).map(v => v && v.card).find(c => c && c.id);
+    const root = Object.keys(frame.content || {}).find(k => frame.content[k] && typeof frame.content[k] === 'object') || '';
+    for (const pg of pages.slice(first)) pg.source = { path: frame.path, root, ...(card ? { card } : {}) };
   });
   pack(sections.rig, SECTION.rig, W, H, pages);
   pack(sections.nab, SECTION.nab, W, H, pages);

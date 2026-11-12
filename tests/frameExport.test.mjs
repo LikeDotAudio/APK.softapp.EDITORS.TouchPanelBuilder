@@ -208,8 +208,13 @@ test('field types invert devicePanel controlFor where it has an answer', () => {
   for (const t of invertible) assert.equal(controlFor({ type: CONTROL_TO_FRAME[t] }), t, t);
   assert.equal(controlFor({ type: '_GuiFaderHorizontal' }), 'fader');
   assert.equal(controlFor({ type: '_GuiButton' }), 'button');
-  for (const t of ALL) assert.equal(controlForFrameType(CONTROL_TO_FRAME[t]),
+  // A toggler is crosspoints only when it holds options (an array of buttons).
+  const opts = { options: { 1: { value: '901' } } };
+  for (const t of ALL) assert.equal(controlForFrameType(CONTROL_TO_FRAME[t], t === 'crosspoints' ? opts : null),
     ['rig', 'nab'].includes(t) ? 'readout' : t, t);
+  assert.equal(controlForFrameType('_GuiButtonToggler'), 'button');
+  assert.equal(controlFor({ type: '_GuiButtonToggler', ...opts }), 'crosspoints');
+  assert.equal(controlFor({ type: '_GuiMatrix' }), 'matrix');
 });
 
 test('an exported frame read back by panelFromPresented keeps types and bindings', () => {
@@ -248,4 +253,30 @@ test('each page is an absolute canvas the size of the glass (engine layout.mode 
   for (const block of Object.values(bin.blocks)) {
     assert.deepEqual(block.layout, { mode: 'absolute', canvas_width: p.width || 1280, canvas_height: p.height || 800 });
   }
+});
+
+test('a device frame field goes back as it came: its key, options, button height, handler and hidden carriers; no write topic promoted', () => {
+  const RW = 'APK.audio/System/Protocols/visa/Device/Router/3235/Dev710/Write';
+  const h = (command) => ({ enable: true, komand_type: 'set', sub_path: 'Routing', command, input_name: 'channel_list', target: RW, model: '3235' });
+  const doc = { key: 'r', device: { type: 'Router', model: '3235', write_topic: RW }, placements: [{ at: 'Instruments/1_Router', frames: [
+    { path: '0_Coax/0_left.json', content: { left: { type: 'OcaBin', blocks: { M: { type: 'OcaBlock', fields: {
+      Matrix: { type: '_GuiMatrix', slot: 0, buses: [{ label: { En: 'B1' } }], sources: [{ label: { En: 'S1' } }], opens: 'Open_Cmd', closes: 'Close_Cmd' },
+      Open_Cmd: { type: '_GuiValue', hidden: true, komand_handler: h('Open_Channels') },
+      Close_Cmd: { type: '_GuiValue', hidden: true, komand_handler: h('Close_Channels') },
+      Row: { type: '_GuiButtonToggler', layout: { height: 30, max_cols: 8, width: '100%' }, komand_handler: h('Close_Channels'),
+        options: { 1: { value: '001', label: { En: 'One' } } } } } } } } } }] }] };
+  const p = panelFromPresented(doc);
+  const out = panelToFrame(p);
+  const fields = Object.values(Object.values(out)[0].blocks)[0].fields;
+  assert.deepEqual(Object.keys(fields).sort(), ['Close_Cmd', 'Matrix', 'Open_Cmd', 'Row']);
+  assert.equal(fields.Row.type, '_GuiButtonToggler');
+  assert.equal(fields.Row.options['1'].value, '001');
+  assert.equal(fields.Row.layout.height, 30, 'each button keeps its own height');
+  assert.equal(fields.Row.layout.max_cols, 8);
+  assert.equal(fields.Row.komand_handler.command, 'Close_Channels');
+  assert.equal(fields.Row.topic, undefined, 'the write topic is not the field\'s address');
+  assert.equal(fields.Row.label, undefined, 'a row with no label of its own gets none');
+  assert.equal(fields.Matrix.type, '_GuiMatrix');
+  assert.equal(fields.Open_Cmd.hidden, true);
+  assert.equal(fields.Close_Cmd.komand_handler.command, 'Close_Channels');
 });

@@ -19,6 +19,8 @@ Design a touch panel on the real glass of a real panel, wire any control to anyt
 - **Right — Controllable Variables.** Per device its ins and outs, then Set / Do / Rig / Get / Nab and their sub-categories; every level is a grab bag (⊞).
 - **Bottom — the schedule.** Every control's address, bindings, place and size; pops out; each row opens a Look and a Behaviour editor.
 
+**Edit on a device's window opens exactly that panel.** The ✏️ Edit of a device window (or of one card's window, on that card's page) opens the panel the window shows: the device's own frames, one page per frame named after its card, each field one control carrying the frame field whole, drawn on the engine glass by the same widget engine the window uses. A control bound to an array — a row of crosspoint buttons, a crosspoint matrix — is one control with one wire per element (its channel), counted on the control (●N), on the variable (×N) and listed under it. Nothing unproven is invented: an unread value is a hazy "—". Save keeps the panel retained on the bus *as frames*, and the device's window shows those frames in place of its template's (OS Apps/Frames/bus-panels).
+
 Wire by dragging a variable onto a control (or onto bare glass to make one), a control's ● port onto a variable, or ＋. Push and hold a control to copy it with all its wiring. When several commands can each give a control its information (two or more Get / Nab), each one is drawn as its own labelled source feeding the control from the left.
 
 <!-- wiki:smoke -->

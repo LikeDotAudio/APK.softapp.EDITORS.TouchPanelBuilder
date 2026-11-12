@@ -7,7 +7,7 @@ import { connectTouchPanelHost, panelBlock, panelMeta, bindPanelDevice } from '.
 const DISCOVERED_CONFIG = new URL('../config/discovered.json', import.meta.url).href;
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(DISCOVERED_CONFIG) : Promise.resolve({}));
-import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, wantFor, arrivals } from './devicePanel.js';
+import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, wantFor, arrivals, connectionCount, elementConnections } from './devicePanel.js';
 import { savedIdentity, savedTopic, readSaved, writeSaved, savedDoc, benchBus } from './savedPanel.js';
 import {
   CONTROL_DEFINITIONS, STYLE_FIELDS, BEHAVIOR_FIELDS, STYLE_PRESETS, widgetStyleVars, rigHeight,
@@ -37,6 +37,17 @@ export const SCREEN_PRESETS = [
 // Rows drawn in the variable column before "show more" — the DOM, not the
 // library, is the limit: one Generator model alone carries over a thousand.
 const VAR_PAGE = 1500;
+
+/* Every field of a frame told not to seed and not to ask on load (in place). */
+function inertFrame(node) {
+  if (!node || typeof node !== 'object') return node;
+  if (typeof node.type === 'string' && node.type !== 'OcaBin' && node.type !== 'OcaBlock') {
+    node.komand_seed = false;
+    delete node.komand_nab_on_load;
+  }
+  for (const v of Object.values(node)) if (v && typeof v === 'object') inertFrame(v);
+  return node;
+}
 const isFrame = (o) => !!o && typeof o === 'object' && (o.type === 'OcaBin'
   || Object.values(o).some(v => v && typeof v === 'object' && v.type === 'OcaBin'));
 const DRAG_MIME = 'application/x-apk-variable';
@@ -202,6 +213,10 @@ export class TouchPanelApp {
     const bin = Object.values(out).find(v => v && v.type === 'OcaBin') || out;
     bin.background = { enabled: false };
     for (const b of Object.values(bin.blocks || {})) b.description = { ...(b.description || {}), show_label: false };
+    // The glass is a picture, never a sender: no control seeds its resting
+    // value and nothing asks on load, so opening the editor on a device's panel
+    // can not move the device (a seeded crosspoint is a CLOSE).
+    inertFrame(out);
     frame.contentWindow.postMessage({ type: 'apkos:render-frame', layoutJson: out, filePath: `TouchPanels/${this.panel.name || 'panel'}.json` }, '*');
   }
 
@@ -861,12 +876,19 @@ export class TouchPanelApp {
     const extra = [v.subsystem, v.scpi, v.values ? v.values.slice(0, 6).join('|') : v.kind !== 'none' ? v.kind : '']
       .filter(Boolean).join(' · ');
     const verb = (VERB_LABEL[v.verb] || v.verb).toUpperCase();
+    // Every element wired to this variable, across every control: countable,
+    // and listed one by one under the row (collapsed until opened).
+    const els = elementConnections(this.panel.widgets, v.id);
+    const count = els.length ? `<span class="el-count" title="${els.length} element(s) wired to this command">×${els.length}</span>` : '';
+    const list = els.length ? `<details class="var-elements" data-vid-els="${esc(v.id)}"${this.openElementLists?.has(v.id) ? ' open' : ''}>
+        <summary>${els.length} element${els.length === 1 ? '' : 's'} wired</summary>
+        <ol>${els.map(e => `<li data-wid="${esc(e.widget.id)}">${esc(e.widget.label)} · ${esc(e.label)} <code>${esc(e.value)}</code></li>`).join('')}</ol></details>` : '';
     return `<div class="lib-row var-row ${boundIds.has(v.id) ? 'bound' : ''}" draggable="true" data-vid="${esc(v.id)}"
         title="${esc(v.description)}\n${esc(v.scpi)}${v.topic ? '\n' + esc(v.topic) : ''}">
       <span class="port"></span>
       <span class="verb verb-${esc(v.verb)}">${esc(verb)}</span>
-      <span class="main"><span>${esc(v.command)}</span><span class="sub">${esc(extra)}</span></span>
-      <button class="add" title="Wire to the selected control (or make one)">＋</button></div>`;
+      <span class="main"><span>${esc(v.command)}${count}</span><span class="sub">${esc(extra)}</span></span>
+      <button class="add" title="Wire to the selected control (or make one)">＋</button></div>${list}`;
   }
 
   // GRAB BAGS — a whole device, verb or sub-category dropped as controls. They
@@ -985,6 +1007,16 @@ export class TouchPanelApp {
     this.varCount.textContent = loading && !total ? 'loading…'
       : `${matched.toLocaleString()} of ${total.toLocaleString()} in ${this.selectedModels.length} device${this.selectedModels.length === 1 ? '' : 's'}`;
     this.varList.innerHTML = parts.join('');
+    this.openElementLists = this.openElementLists || new Set();
+    this.varList.querySelectorAll('details.var-elements').forEach(d => d.addEventListener('toggle', () => {
+      if (d.open) this.openElementLists.add(d.dataset.vidEls); else this.openElementLists.delete(d.dataset.vidEls);
+      this.scheduleWires();
+    }));
+    this.varList.querySelectorAll('details.var-elements li[data-wid]').forEach(li => li.addEventListener('click', () => {
+      const w = this.widgetById(li.dataset.wid);
+      if (w && w.page && w.page !== this.currentPage) this.setPage(w.page);
+      this.selectWidget(li.dataset.wid);
+    }));
 
     this.varList.querySelector('#var-more')?.addEventListener('click', () => {
       this.varLimit += VAR_PAGE;
@@ -1203,6 +1235,25 @@ export class TouchPanelApp {
           y2 = clampY(dr.top + dr.height / 2, devBox);
           off = ' off';
         }
+        // AN ARRAY CONNECTION IS ONE WIRE PER ELEMENT (owner, 2026-11-11): each
+        // crosspoint button / matrix cell runs its own wire from where it sits
+        // on the control, carrying its own value into the command's argument.
+        const els = Array.isArray(b.elements) ? b.elements : [];
+        if (els.length) {
+          const arg = (w.komand && w.komand.input_name) || 'value';
+          els.forEach((e, i) => {
+            const cell = wEl.querySelector(`[data-el="${CSS.escape(String(e.value))}"]`);
+            const cr = cell ? cell.getBoundingClientRect() : null;
+            const ex = cr ? Math.min(cr.right - 3, wr.right) : wr.right;   // a cell scrolled past the box leaves from its edge
+            const ey = cr ? cr.top + cr.height / 2 : wr.top + (wr.height * (i + 1)) / (els.length + 1);
+            const d = this.curve(ex - base.left, ey - base.top, x2 - base.left, y2 - base.top);
+            const tip = `${esc(w.label)} · ${esc(e.label)} (${esc(e.value)}) → ${esc(b.model)} ${esc(b.command)} ${esc(arg)}=${esc(e.value)}\nElement ${i + 1} of ${els.length} · click to show · double-click to disconnect the whole array`;
+            paths.push(`<path class="wire el${sel}${off}" d="${d}"/>`);
+            paths.push(`<circle class="el-port" cx="${(ex - base.left).toFixed(1)}" cy="${(ey - base.top).toFixed(1)}" r="2"/>`);
+            paths.push(`<path class="hit" d="${d}" data-wid="${esc(w.id)}" data-bid="${esc(b.id)}"><title>${tip}</title></path>`);
+          });
+          continue;
+        }
         const d = this.curve(x1 - base.left, y1 - base.top, x2 - base.left, y2 - base.top);
         paths.push(`<path class="wire${sel}${off}" d="${d}"/>`);
         paths.push(`<path class="hit" d="${d}" data-wid="${esc(w.id)}" data-bid="${esc(b.id)}"><title>${esc(w.label)} ⇄ ${esc(b.model)} ${esc(b.command)}\nClick to show · double-click to disconnect</title></path>`);
@@ -1323,6 +1374,7 @@ export class TouchPanelApp {
     }
     p = p || { name: saved.name, device: { model: want.model, type: want.family }, deviceId: identity, placement: 'saved', placements: [] };
     this.panel.deviceId = (useSaved && saved.deviceId) || p.deviceId;
+    this.panel.sourcePlacement = (useSaved && saved.sourcePlacement) || p.placement || '';
     this.savedTopicName = topic;
     this.fillPlacementPicker(p.placements, !!saved, useSaved ? '' : (want.placement || p.placement));
     this.link = {
@@ -1332,6 +1384,10 @@ export class TouchPanelApp {
     };
     const pageAsked = want.page && this.panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
     this.setPage(pageAsked ? pageAsked.id : this.panel.pages[0].id);
+    // WHAT YOU SEE IS WHAT YOU EDIT: a panel drawn from the device's own frames
+    // is drawn on the glass by the same widget engine the device window uses
+    // (engine glass), its fields exported back as they came.
+    if (this.panel.widgets.some(w => w.frame)) this.setEngineGlass(true);
     this.changed();
     say(useSaved
       ? `${this.panel.name} · SAVED ${String(saved.saved_at || '').slice(0, 16).replace('T', ' ')}`
@@ -1458,7 +1514,9 @@ export class TouchPanelApp {
       this.setupThemeDropdown();
     }
     if (Array.isArray(block.pages) && block.pages.length) {
-      this.panel.pages = block.pages.filter(p => p && p.id).map(p => ({ id: String(p.id), name: String(p.name || p.id) }));
+      // A page keeps where it came from (the device frame it is saved back to).
+      this.panel.pages = block.pages.filter(p => p && p.id).map(p => ({ id: String(p.id), name: String(p.name || p.id),
+        ...(p.source && typeof p.source === 'object' ? { source: p.source } : {}) }));
     } else {
       this.panel.pages = [{ id: 'p1', name: 'Main' }];
     }
@@ -1862,7 +1920,8 @@ export class TouchPanelApp {
       const def = CONTROL_DEFINITIONS[w.type] || CONTROL_DEFINITIONS.button;
       const el = document.createElement('div');
       const isSelected = w.id === this.selectedWidgetId;
-      const nBound = (w.bindings || []).length;
+      // Connections, counted per element: a row of 8 crosspoints is 8 wires.
+      const nBound = connectionCount(w);
       el.className = `touch-widget ${isSelected ? 'selected' : ''}`;
       el.dataset.wid = w.id;
       el.style.position = 'absolute';
@@ -1879,7 +1938,7 @@ export class TouchPanelApp {
 
       el.innerHTML = def.render({ ...w, label: esc(w.label), subtitle: esc(w.subtitle), style: this.effectiveStyle(w) })
         + `<span class="w-port ${nBound ? 'bound' : ''}" title="Drag onto a variable to wire this control"></span>`
-        + (nBound ? `<span class="w-badge" title="${nBound} variable(s) wired">${nBound}</span>` : '');
+        + (nBound ? `<span class="w-badge" title="${nBound} connection(s) wired — every element of an array counts">${nBound}</span>` : '');
 
       el.querySelector('.w-port').addEventListener('mousedown', (e) => this.startPortDrag(e, w));
 
@@ -1963,7 +2022,7 @@ export class TouchPanelApp {
         tr.style.background = 'var(--osc-bg-surface-hover)';
       }
       const chips = (w.bindings || []).map(b => `<span class="bind-chip" data-idx="${idx}" data-bid="${esc(b.id)}"
-          title="${esc(b.scpi)}${b.device ? '\n' + esc(b.device) : ''}"><b>${esc(b.model)}</b> ${esc(b.command)}
+          title="${esc(b.scpi)}${b.device ? '\n' + esc(b.device) : ''}${Array.isArray(b.elements) && b.elements.length ? '\n' + b.elements.map(e => `${esc(e.label)} = ${esc(e.value)}`).join('\n') : ''}"><b>${esc(b.model)}</b> ${esc(b.command)}${Array.isArray(b.elements) && b.elements.length ? ` <span class="el-count">×${b.elements.length}</span>` : ''}
           <span class="x" data-unbind="1" title="Disconnect">✕</span></span>`).join('')
         || '<span class="muted-cell">— drag a variable here or onto the control —</span>';
 

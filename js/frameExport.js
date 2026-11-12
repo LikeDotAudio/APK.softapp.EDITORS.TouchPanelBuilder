@@ -65,6 +65,8 @@ export const CONTROL_TO_FRAME = {
   rig: '_SmartValue',
   nab: '_SmartValue',
   trace: '_DynamicGraph',   // the engine's graph kind (frameLayout/widgetDispatch.js) — a monitoring box's trace
+  crosspoints: '_GuiButtonToggler',   // a row of buttons, one element (channel) each
+  matrix: '_GuiMatrix',               // buses × sources, one element (channel) per cell
 };
 const FADER_H = '_GuiFaderHorizontal';
 const BUTTON_MOMENTARY = '_GuiButton';
@@ -81,6 +83,7 @@ const FRAME_TO_CONTROL = {
   _GuiMeter: 'meter', _Meter: 'meter', _VuMeter: 'vu',
   _HighVisButton: 'tile',
   _DynamicGraph: 'trace', DynamicGraph: 'trace',
+  _GuiMatrix: 'matrix', _CrossMatrix: 'matrix', CrossMatrix: 'matrix',
 };
 const KEYWORDS = [
   ['ltp', 'ltp'], ['cmdp', 'cmdp'], ['mdp', 'mdp'], ['needle', 'vu'], ['vu', 'vu'],
@@ -91,8 +94,11 @@ const KEYWORDS = [
 const CONTAINERS = new Set(['OcaBin', 'OcaBlock', 'OcaArray', 'OcaCollapsibleBlock']);
 
 /** The panel control that plays a frame field's part. */
-export function controlForFrameType(type) {
+export function controlForFrameType(type, field = null) {
   const t = String(type || '');
+  // A toggler holding options is an array of buttons (devicePanel controlFor).
+  if (t === '_GuiButtonToggler' && field && field.options && typeof field.options === 'object'
+    && Object.keys(field.options).length) return 'crosspoints';
   if (FRAME_TO_CONTROL[t]) return FRAME_TO_CONTROL[t];
   const lower = t.toLowerCase();
   for (const [k, c] of KEYWORDS) if (lower.includes(k)) return c;
@@ -273,22 +279,41 @@ export function widgetToField(w, style = {}, index = 0) {
   }
 
   // What the panel owns overlays the library element: label, size, place, path.
-  field.label = { En: String(w.label ?? '') };
-  field.geometry = { ...(isObj(field.geometry) ? field.geometry : {}), width: wpx, height: hpx };
+  // A field that came from the device's own frame (devicePanel, `w.frame`)
+  // keeps its own label until somebody renames the control — a crosspoint row
+  // has no label of its own, its buttons carry theirs.
+  const own = isObj(w.frame) && lib;
+  if (!own || w.label !== w.frame.label) field.label = { En: String(w.label ?? '') };
+  // The device's own field keeps its geometry and its layout height, and its
+  // box width is written as a CSS length: in the engine's ButtonToggler a
+  // NUMBER layout.width / height is each BUTTON's size, not the row's, so a
+  // number here stretched every crosspoint across the glass.
+  const ownLayout = own && isObj(field.layout) ? field.layout : null;
+  if (!own) field.geometry = { ...(isObj(field.geometry) ? field.geometry : {}), width: wpx, height: hpx };
   if (type === 'meter' && !lib) field.geometry.orientation = wpx > hpx ? 'horiz' : 'vert';
   field.layout = {
-    ...(isObj(field.layout) ? field.layout : {}), width: wpx, height: hpx, ...gridPlace(w),
+    ...(isObj(field.layout) ? field.layout : {}),
+    width: own ? `${wpx}px` : wpx,
+    height: ownLayout && ownLayout.height != null ? ownLayout.height : own ? `${hpx}px` : hpx,
+    ...gridPlace(w),
     position: 'absolute', left: Math.max(0, Math.round(num(w.x) || 0)), top: Math.max(0, Math.round(num(w.y) || 0)),
   };
   if (type === 'button' || type === 'tile') field.layout.corner_radius = px(style.radius) ?? 6;
 
   const b = (w.bindings || [])[0];
-  // The control's own address first: a device panel binds many controls to one
-  // write topic, and the engine keys a field's state on its topic.
-  const topic = w.address || (b && b.topic) || '';
-  if (topic) field.topic = topic; else delete field.topic;
-  const h = handlerOf(w, b);
-  if (h) field.komand_handler = h;
+  if (own) {
+    // The device's frame field goes back as it came: its own topic (or none —
+    // the engine derives it from where the frame sits), its own handler. A
+    // write topic is never promoted to the field's own address.
+    if (isObj(w.komand)) field.komand_handler = clone(w.komand);
+  } else {
+    // The control's own address first: a device panel binds many controls to one
+    // write topic, and the engine keys a field's state on its topic.
+    const topic = w.address || (b && b.topic) || '';
+    if (topic) field.topic = topic; else delete field.topic;
+    const h = handlerOf(w, b);
+    if (h) field.komand_handler = h;
+  }
 
   field[TP_KEY] = { index, widget: clone(w) };
   return field;
@@ -327,8 +352,18 @@ export function panelToFrame(panel, effectiveStyleFn) {
   widgets.forEach((w, i) => {
     const pid = known.has(w.page) ? w.page : firstId;
     const slot = byPage.get(pid);
-    const key = unique(frameKey(w.label || w.type, frameKey(w.id, 'Field')), slot.used);
+    const fromFrame = isObj(w.frame) && w.frame.key;
+    // A field from the device's frame keeps its key (siblings name it: a
+    // matrix's `opens` / `closes`), and the hidden fields it carries go with it.
+    const key = unique(fromFrame ? frameKey(w.frame.key) : frameKey(w.label || w.type, frameKey(w.id, 'Field')), slot.used);
     slot.block.fields[key] = widgetToField(w, styleOf(w) || {}, i);
+    if (fromFrame && isObj(w.frame.carried)) {
+      for (const [k, f] of Object.entries(w.frame.carried)) {
+        if (slot.used.has(k)) continue;
+        slot.used.add(k);
+        slot.block.fields[k] = clone(f);
+      }
+    }
   });
 
   const meta = clone({ ...p });
@@ -392,7 +427,7 @@ function flow(items, W) {
 }
 
 function plainWidget(key, field, id, pageId) {
-  const type = controlForFrameType(field.type);
+  const type = controlForFrameType(field.type, field);
   const def = CONTROL_DEFINITIONS[type] || { w: 100, h: 100 };
   const dim = k => px(field.geometry?.[k]) ?? px(field.layout?.[k]) ?? px(field[k]);
   const w = Math.round(dim('width') || def.w);

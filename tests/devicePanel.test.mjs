@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   panelFromPresented, panelFromVariables, isPanelFor, placementsOf, resourceKey, directOf, fieldLabel,
   controlFor, behaviorOf, linkQuery, linkSearch, wantFor, arrivals,
+  connectionCount, elementConnections, optionsOf, matrixCells,
 } from '../js/devicePanel.js';
 
 const W = 'APK.audio/System/Protocols/visa/Device/Generator/G1/DevX/Write';
@@ -42,7 +43,7 @@ test('the Instruments placement is the starting panel; the deeper ones follow', 
 test('a presented panel becomes a touch panel that keeps its commands', () => {
   const p = panelFromPresented(doc);
   assert.equal(p.placement, 'Instruments/3_Generator');
-  assert.deepEqual(p.pages, [{ id: 'p1', name: 'OUTPUT' }]);
+  assert.deepEqual(p.pages, [{ id: 'p1', name: 'OUTPUT', source: { path: '0_output/0_output.json', root: 'output' } }]);
   assert.equal(p.deviceId, 'SER1');
   const [out, freq, wave, shown] = p.widgets;
   assert.equal(out.type, 'button');
@@ -149,16 +150,18 @@ test('a presented rig field leaves its frame for the RIG page', () => {
   assert.equal(s.bindings[0].verb, 'rig');
 });
 
-test('blocks share a row and a sparse page is enlarged to fill the glass', () => {
+test('each block of a presented frame starts its own row, drawn at its own size (as the device window draws it)', () => {
   const fields = {};
   for (let i = 0; i < 6; i++) fields[`K${i}`] = { type: '_GuiKnob', label: { En: `K${i}` } };
   const two = { A: { type: 'OcaBlock', fields: { K0: fields.K0, K1: fields.K1 } },
     B: { type: 'OcaBlock', fields: { K2: fields.K2, K3: fields.K3 } } };
   const p = panelFromPresented({ key: 'k', device: { model: 'M' }, placements: [{ at: 'Instruments/x', frames: [
     { path: '0_two/0.json', content: { two: { type: 'OcaBin', blocks: two } } }] }] });
-  const ys = new Set(p.widgets.map(w => w.y));
-  assert.equal(ys.size, 1, 'two small blocks sit on one row');
-  assert.ok(p.widgets[0].w > 90, 'a sparse page grows its controls');
+  const ys = [...new Set(p.widgets.map(w => w.y))];
+  assert.equal(ys.length, 2, 'block A on one row, block B on the next');
+  assert.equal(p.widgets[0].y, p.widgets[1].y);
+  assert.ok(p.widgets[2].y > p.widgets[0].y);
+  assert.equal(p.widgets[0].w, 90, 'nothing is enlarged past the size the frame gives it');
   for (const w of p.widgets) assert.ok(w.x + w.w <= 1280 && w.y + w.h <= 800);
 });
 
@@ -227,4 +230,109 @@ test('a two-state label names the control by its resting face', () => {
   assert.equal(fieldLabel('group_mute', { label: { active: { text: { En: 'MUTED ALL' } }, inactive: { text: { En: 'MUTE ALL' } } } }), 'MUTE ALL');
   assert.equal(fieldLabel('k', { label: { En: 'Volume' } }), 'Volume');
   assert.equal(fieldLabel('k', {}), 'k');
+});
+
+/* ---------------------------------------------- the 3235: what the device window shows */
+
+const RW = 'APK.audio/System/Protocols/visa/Device/Router/3235/Dev710/Write';
+const routing = (command) => ({ enable: true, komand_type: 'set', sub_path: 'Routing', command, input_name: 'channel_list', target: RW, model: '3235' });
+const opt = (value, text) => ({ value, label: { active: { text: { En: text } }, inactive: { text: { En: text } } } });
+const header = { type: 'OcaBlock', layout_columns: 3, fields: {
+  Name: { type: '_TextInput', label: { En: 'Device' }, value_default: 'HP / Agilent / Keysight 3235', read_only: true, layout: { width: '40%' } },
+  Address: { type: '_TextInput', label: { En: 'Address' }, value_default: 'TCPIP::44.44.44.222::gpib7,10::INSTR', read_only: true, layout: { width: '30%' } },
+} };
+const router = {
+  key: '3235_gpib7-10',
+  device: { type: 'Router', model: '3235', resource: 'TCPIP::44.44.44.222::gpib7,10::INSTR', write_topic: RW, serial: '' },
+  placements: [{ at: 'Instruments/1_Router', frames: [
+    { path: '0_Coax/0_left.json', content: { left: { type: 'OcaBin', card: { id: 'coax-left', name: 'Coax Left', slot: 0 }, blocks: {
+      Device: header,
+      Card_000_Coax_Matrix: { type: 'OcaBlock', fields: {
+        Matrix: { type: '_GuiMatrix', slot: 0, buses: [{ label: { En: 'SCOPE IN 1' } }, { label: { En: 'SCOPE IN 2' } }],
+          sources: [{ label: { En: 'Patch OUT' } }, { label: { En: 'Patch IN' } }, { label: { En: 'Sig Gen' } }],
+          opens: 'Open_Cmd', closes: 'Close_Cmd', value: { default_value: '' } },
+        Open_Cmd: { type: '_GuiValue', hidden: true, komand_handler: routing('Open_Channels') },
+        Close_Cmd: { type: '_GuiValue', hidden: true, komand_handler: routing('Close_Channels') },
+      } } } } } },
+    { path: '2_Aux/0_Test_Gear.json', content: { Test_Gear: { type: 'OcaBin', card: { id: 'aux', name: 'Aux', slot: 9 }, blocks: {
+      Device: header,
+      Card_9_Snake_Interface: { type: 'OcaBlock', fields: {
+        Bus_AB0_Left_Out: { type: '_GuiButtonToggler', selection_mode: 'radio', layout: { height: 30, max_cols: 8, width: '100%' },
+          komand_handler: routing('Close_Channels'),
+          options: { 1: opt('901', 'Test Patch (L)'), 2: opt('902', 'Bench AP (L)'), 10: opt('910', 'Tenth'), 3: opt('903', 'Bench Neutrik (L)') } },
+      } } } } } },
+    { path: '3_Setup/0_Setup.json', content: { Setup: { type: 'OcaBin', blocks: {
+      Status: { type: 'OcaBlock', fields: {
+        evidence: { type: '_TextInput', value_default: '---', device_state: 'evidence', read_only: true, topic: 'x/Dev710' } } } } } } },
+  ] }],
+};
+
+test('the 3235 opens as the device window shows it: a page per card, named after the card', () => {
+  const p = panelFromPresented(router);
+  assert.deepEqual(p.pages.map(x => x.name), ['COAX LEFT', 'AUX', 'SETUP']);
+});
+
+test('a crosspoint row is ONE control whose connection is an array — every button its own element', () => {
+  const p = panelFromPresented(router);
+  const aux = p.pages.find(x => x.name === 'AUX').id;
+  const row = p.widgets.find(w => w.page === aux && w.type === 'crosspoints');
+  assert.ok(row, 'a crosspoint control, not a lone button');
+  assert.equal(row.bindings.length, 1);
+  assert.equal(row.bindings[0].command, 'Close_Channels');
+  assert.deepEqual(row.bindings[0].elements.map(e => e.value), ['901', '902', '903', '910'], 'every option, in option order');
+  assert.equal(row.bindings[0].elements[0].label, 'Test Patch (L)');
+  assert.equal(connectionCount(row), 4);
+  assert.deepEqual(row.field.options['1'].value, '901', 'the frame field rides along whole');
+  assert.equal(row.frame.key, 'Bus_AB0_Left_Out');
+  assert.equal(row.w, 1280 - 24, 'width: 100% of the row');
+});
+
+test('a matrix carries its hidden Open_Cmd / Close_Cmd: two connections, one element per cell', () => {
+  const p = panelFromPresented(router);
+  const m = p.widgets.find(w => w.type === 'matrix');
+  assert.deepEqual(m.bindings.map(b => b.command).sort(), ['Close_Channels', 'Open_Channels']);
+  for (const b of m.bindings) assert.deepEqual(b.elements.map(e => e.value), ['011', '012', '013', '021', '022', '023']);
+  assert.equal(m.bindings[0].elements[0].label, 'SCOPE IN 1 ← Patch OUT');
+  assert.equal(connectionCount(m), 12);
+  assert.ok(!p.widgets.some(w => /CMD/.test(w.label)), 'the hidden carriers are not tiles on the glass');
+  assert.deepEqual(Object.keys(m.frame.carried).sort(), ['Close_Cmd', 'Open_Cmd']);
+  assert.deepEqual(matrixCells({ slot: 9, buses: [{}], sources: [{}, {}] }).map(c => c.value), ['911', '912']);
+});
+
+test('the header says the panel\'s own words; a reading nobody has taken stays empty (haze, never 1000 Hz)', () => {
+  const p = panelFromPresented(router);
+  const name = p.widgets.find(w => w.frame && w.frame.key === 'Name');
+  assert.equal(name.type, 'readout');
+  assert.equal(name.behavior.default, 'HP / Agilent / Keysight 3235');
+  const addr = p.widgets.find(w => w.frame && w.frame.key === 'Address');
+  assert.equal(addr.y, name.y, 'a block is one row');
+  const ev = p.widgets.find(w => w.frame && w.frame.key === 'evidence');
+  assert.equal(ev.behavior.default, undefined, '"---" of a state topic is not a value');
+});
+
+test('elementConnections lists every element wired to one command across the panel', () => {
+  const p = panelFromPresented(router);
+  const all = elementConnections(p.widgets, 'Router/3235/set/Close_Channels');
+  assert.equal(all.length, 4 + 6);
+  assert.deepEqual(optionsOf({ options: { 2: { value: 'b' }, 1: { value: 'a' } } }).map(o => o.value), ['a', 'b']);
+});
+
+test('Save writes the panel back in the device\'s frame form: a frame per source frame, its card kept', async () => {
+  const { savedDoc, framesOf } = await import('../js/savedPanel.js');
+  const p = panelFromPresented(router);
+  const panel = { ...p, id: 'tp', theme: {}, sourcePlacement: p.placement };
+  const frames = framesOf(panel);
+  assert.deepEqual(frames.map(f => f.path), ['0_Coax/0_left.json', '2_Aux/0_Test_Gear.json', '3_Setup/0_Setup.json']);
+  const aux = frames[1].content.Test_Gear;
+  assert.equal(aux.type, 'OcaBin');
+  assert.deepEqual(aux.card, { id: 'aux', name: 'Aux', slot: 9 });
+  const fields = Object.values(aux.blocks)[0].fields;
+  assert.equal(fields.Bus_AB0_Left_Out.type, '_GuiButtonToggler');
+  assert.equal(fields.Bus_AB0_Left_Out.options['1'].value, '901');
+  const coax = Object.values(frames[0].content.left.blocks)[0].fields;
+  assert.ok(coax.Open_Cmd && coax.Close_Cmd && coax.Matrix, 'the matrix and its hidden carriers');
+  const doc = savedDoc(panel, { model: '3235' }, new Date('2026-11-11T00:00:00Z'));
+  assert.equal(doc.placement, 'Instruments/1_Router');
+  assert.equal(doc.frames.length, 3);
+  assert.equal(doc.block.pages[1].source.card.id, 'aux');
 });
