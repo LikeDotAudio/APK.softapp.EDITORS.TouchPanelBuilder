@@ -15,7 +15,7 @@ import {
 import { VINTAGE_LOOKS, loadLibraryLooks, groupLooks, lookFromField } from './lookLibrary.js';
 import { cloneControl, isHold, HOLD_MS } from './copyControl.js';
 import { paletteOf, grabBag, paletteFilter, deviceIO } from './palettes.js';
-import { panelToFrame, frameToPanel, deviceWindowPath } from './frameExport.js';
+import { panelToFrame, frameToPanel } from './frameExport.js';
 import {
   ControlLibrary, VERBS, VERB_LABEL, modelKey, suggestWidgetType, sourceFeeds,
   humanLabel, bindingFor, matchesQuery,
@@ -48,12 +48,6 @@ function inertFrame(node) {
   for (const v of Object.values(node)) if (v && typeof v === 'object') inertFrame(v);
   return node;
 }
-/* The Gui topic prefix the engine gives a frame path (contracts
-   Topics.gui.fromPanelPath, the OaTopicMaker twin), or '' without contracts. */
-const guiPrefixOf = (path) => {
-  const g = typeof window !== 'undefined' && window.APKContracts && window.APKContracts.Topics && window.APKContracts.Topics.gui;
-  return g && typeof g.fromPanelPath === 'function' ? g.fromPanelPath(path) : '';
-};
 const isFrame = (o) => !!o && typeof o === 'object' && (o.type === 'OcaBin'
   || Object.values(o).some(v => v && typeof v === 'object' && v.type === 'OcaBin'));
 const DRAG_MIME = 'application/x-apk-variable';
@@ -191,10 +185,7 @@ export class TouchPanelApp {
       frame = document.createElement('iframe');
       frame.className = 'engine-glass';
       frame.title = 'Engine glass';
-      // ?readonly=1: the glass subscribes and draws what is retained (a lit
-      // crosspoint) and its bus client sends NOTHING (MqttProvider
-      // oaBusReadOnly) — opening a device's panel here can never move it.
-      frame.src = '/FrontEnd/apkos-frame-host.html?readonly=1';
+      frame.src = '/FrontEnd/apkos-frame-host.html';
       this.bezelEl.insertBefore(frame, this.surfaceEl);
       window.addEventListener('message', (e) => {
         if (e.data?.type === 'apkos:frame-host-ready' && e.source === frame.contentWindow) this.postEngineGlass();
@@ -217,11 +208,7 @@ export class TouchPanelApp {
     frame.style.height = `${this.panel.height}px`;
     const page = this.panel.pages.find(p => p.id === this.currentPage) || this.panel.pages[0];
     const one = { ...this.panel, pages: [page], widgets: this.panel.widgets.filter(w => this.isOnPage(w)) };
-    // Drawn at the address the device's own window draws this frame (and its
-    // fields at theirs), so what is lit there is lit here and the crosspoint
-    // matrix finds its device on the bench by the same path (ROAD-3697).
-    const out = panelToFrame(one, (w) => this.effectiveStyle(w), { prefixOf: guiPrefixOf });
-    const windowPath = deviceWindowPath(this.panel, page);
+    const out = panelToFrame(one, (w) => this.effectiveStyle(w));
     // Bare glass: no panel cover, no block title — the block IS the screen.
     const bin = Object.values(out).find(v => v && v.type === 'OcaBin') || out;
     bin.background = { enabled: false };
@@ -230,8 +217,7 @@ export class TouchPanelApp {
     // value and nothing asks on load, so opening the editor on a device's panel
     // can not move the device (a seeded crosspoint is a CLOSE).
     inertFrame(out);
-    frame.contentWindow.postMessage({ type: 'apkos:render-frame', layoutJson: out,
-      filePath: windowPath || `TouchPanels/${this.panel.name || 'panel'}.json` }, '*');
+    frame.contentWindow.postMessage({ type: 'apkos:render-frame', layoutJson: out, filePath: `TouchPanels/${this.panel.name || 'panel'}.json` }, '*');
   }
 
   initElements() {
@@ -1393,10 +1379,6 @@ export class TouchPanelApp {
     p = p || { name: saved.name, device: { model: want.model, type: want.family }, deviceId: identity, placement: 'saved', placements: [] };
     this.panel.deviceId = (useSaved && saved.deviceId) || p.deviceId;
     this.panel.sourcePlacement = (useSaved && saved.sourcePlacement) || p.placement || '';
-    // The device's folder in its window's tree (bus-panels devicePanelTree):
-    // with the placement and a page's frame path, where the window draws it —
-    // the glass mirrors that address and Save writes to it (ROAD-3697).
-    this.panel.sourceFolder = (useSaved && saved.sourceFolder) || (doc && (doc.folder || doc.key)) || '';
     this.savedTopicName = topic;
     this.fillPlacementPicker(p.placements, !!saved, useSaved ? '' : (want.placement || p.placement));
     this.link = {
@@ -1566,7 +1548,7 @@ export class TouchPanelApp {
   async saveBlock() {
     // A panel opened for a box is also kept for that box, retained on the bus,
     // so its link and its touch pad open it next time (ROAD-3503).
-    if (this.link && this.savedTopicName && writeSaved(this.bus, this.savedTopicName, savedDoc(this.panel, this.link, new Date(), { prefixOf: guiPrefixOf }))) {
+    if (this.link && this.savedTopicName && writeSaved(this.bus, this.savedTopicName, savedDoc(this.panel, this.link))) {
       const tag = document.getElementById('block-tag');
       if (tag) tag.textContent = `SAVED FOR ${savedIdentity(this.panel, this.link)}`;
       this.fillPlacementPicker([...(document.getElementById('placement-picker')?.options || [])]
