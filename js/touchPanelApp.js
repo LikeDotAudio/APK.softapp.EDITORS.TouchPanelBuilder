@@ -24,10 +24,53 @@ import {
 import { libraryButton, bimFields } from './bimLibrary.js';
 import { touchPanelToIfc, touchPanelFromIfc } from './touchPanelIfc.js';
 
+/** The screen preset whose page is the size of the editor window. */
+export const FIT_SCREEN = 'fit';
+
+/* The handles every control on the glass carries: four edges, four corners. */
+export const RESIZE_EDGES = ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'];
+const MIN_SIDE = 16;
+
+/** A control's box after dragging its `edge` handle by (dx, dy) glass px.
+    start: { wx, wy, ww, wh } the box when the drag began. The opposite edge
+    stays put; no side goes under MIN_SIDE and nothing moves off the glass. */
+export function resizeBox(start, edge, dx, dy) {
+  let x = start.wx; let y = start.wy; let w = start.ww; let h = start.wh;
+  if (edge.includes('e')) w = Math.max(MIN_SIDE, start.ww + dx);
+  if (edge.includes('s')) h = Math.max(MIN_SIDE, start.wh + dy);
+  if (edge.includes('w')) {
+    x = Math.max(0, Math.min(start.wx + dx, start.wx + start.ww - MIN_SIDE));
+    w = start.wx + start.ww - x;
+  }
+  if (edge.includes('n')) {
+    y = Math.max(0, Math.min(start.wy + dy, start.wy + start.wh - MIN_SIDE));
+    h = start.wy + start.wh - y;
+  }
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+}
+
+/** The page size of a fit-the-window panel: the room there is (availW × availH
+    glass px), grown to hold every control placed (so a smaller window scrolls,
+    it never cuts a control off). */
+export function fitPageSize(availW, availH, widgets = [], margin = 12) {
+  let right = 0; let bottom = 0;
+  for (const w of widgets) {
+    right = Math.max(right, (Number(w.x) || 0) + (Number(w.w) || 0));
+    bottom = Math.max(bottom, (Number(w.y) || 0) + (Number(w.h) || 0));
+  }
+  return {
+    width: Math.max(320, Math.floor(availW), right ? Math.ceil(right + margin) : 0),
+    height: Math.max(240, Math.floor(availH), bottom ? Math.ceil(bottom + margin) : 0),
+  };
+}
+
 // Each screen is a BIM library part (ROAD-3598 answer 7): `part` is its id in DATABASE.server.BIM
 // (SRC/importers/import_control_surfaces.py writes it from this table), and the panel's IFC type is that
 // part's (GlobalId part/<id>, IfcUnitaryControlElementType CONTROLPANEL — touchPanelIfc.js).
 export const SCREEN_PRESETS = [
+  // The page grows to the screen: its resolution is the editor's glass area,
+  // kept up on every resize (and never smaller than what is placed on it).
+  { id: FIT_SCREEN, name: 'Fit the window (grows with the screen)', w: 0, h: 0, fit: true },
   { id: '10in', name: '10.1″ Touch Panel (1280 × 800)', w: 1280, h: 800, part: 'generic/touch-panel-10in' },
   { id: '7in', name: '7.0″ Tabletop Panel (1024 × 600)', w: 1024, h: 600, part: 'generic/touch-panel-7in' },
   { id: '15in', name: '15.6″ Wall Mount (1920 × 1080)', w: 1920, h: 1080, part: 'generic/touch-panel-15in' },
@@ -74,7 +117,7 @@ export class TouchPanelApp {
       id: 'tp_01',
       name: 'TP-STAGE-01',
       room: 'MAIN AUDITORIUM',
-      screenPreset: '10in',
+      screenPreset: FIT_SCREEN,
       width: 1280,
       height: 800,
       // The device theme: every control on this glass wears it unless the
@@ -534,7 +577,12 @@ export class TouchPanelApp {
 
     this.selectPreset.addEventListener('change', (e) => {
       const p = SCREEN_PRESETS.find(pr => pr.id === e.target.value);
-      if (p) {
+      if (p && p.fit) {
+        // Every control keeps its pixels; the page takes the window.
+        this.panel.screenPreset = p.id;
+        this.render();
+        this.changed();
+      } else if (p) {
         // The layout follows the glass: every control keeps its place and
         // proportion on the new resolution.
         const sx = p.w / this.panel.width;
@@ -606,6 +654,12 @@ export class TouchPanelApp {
     this.themeEditor?.addEventListener('input', (e) => this.onFieldInput(e));
     this.tableBody?.addEventListener('input', (e) => this.onFieldInput(e));
     window.addEventListener('resize', () => this.fitGlass());
+    // The stage also changes size without the window (the schedule's resize
+    // bar, a column): the glass follows it.
+    if (typeof ResizeObserver === 'function' && this.stageEl) {
+      let frame = 0;
+      new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => this.fitGlass()); }).observe(this.stageEl);
+    }
 
     this.btnAddWidget?.addEventListener('click', () => {
       this.addWidget('button');
@@ -925,7 +979,7 @@ export class TouchPanelApp {
     const device = this.deviceFor.get(key) || null;
     const built = panelFromVariables(pick, {
       model: m?.model || key.split('/')[1] || '', family: m?.family || key.split('/')[0] || '',
-      device, width: this.panel.width, height: this.panel.height,
+      device, ...this.layoutSize(),
     });
     if (!built || !built.widgets?.length) return;
     const title = [m?.model || key, sub || (verb ? VERB_LABEL[verb] || verb : '')].filter(Boolean).join(' · ');
@@ -1365,14 +1419,14 @@ export class TouchPanelApp {
     const cfg = await loadDiscoveredConfig();
     const waitMs = Number(cfg.panel_wait_ms) || 0;
     const doc = part ? presentedFromPart(part) : await this.presentedPanel(want, waitMs);
-    let p = doc ? panelFromPresented(doc, { placement: want.placement, width: this.panel.width, height: this.panel.height }) : null;
+    let p = doc ? panelFromPresented(doc, { placement: want.placement, ...this.layoutSize() }) : null;
     if (!p) {
       await this.libraryReady;
       const key = modelKey(want.family, want.model);
       try {
         const vars = await this.library.variables(key);
         p = panelFromVariables(vars, { model: want.model, family: want.family,
-          device: this.deviceFor.get(key) || null, width: this.panel.width, height: this.panel.height });
+          device: this.deviceFor.get(key) || null, ...this.layoutSize() });
       } catch (_) { p = null; }
     }
     // THE SAVED PANEL FIRST (ROAD-3503): what somebody edited and saved for
@@ -1790,23 +1844,65 @@ export class TouchPanelApp {
     return { ...this.themeStyle(), ...(w.style || {}) };
   }
 
+  /* The glass a generated panel is laid out on. A fit-the-window page is as
+     wide as the window and grows downward, so it is packed at least 800 px
+     tall: a short window scrolls, it does not cut the device into pages. */
+  layoutSize() {
+    if (this.isFitScreen()) this.fitGlass();
+    return { width: this.panel.width, height: this.isFitScreen() ? Math.max(800, this.panel.height) : this.panel.height };
+  }
+
+  isFitScreen() {
+    return !!SCREEN_PRESETS.find(p => p.id === this.panel.screenPreset)?.fit;
+  }
+
+  /* The room the stage has for the bezel, in screen px: its inner box less
+     the tabs and buttons stacked above the glass. */
+  stageRoom() {
+    const cs = getComputedStyle(this.stageEl);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const gap = parseFloat(cs.rowGap) || 0;
+    let above = 0;
+    for (const c of this.stageEl.children) {
+      if (c === this.glassFitEl || c.hidden || getComputedStyle(c).position === 'absolute') continue;
+      if (!c.offsetHeight) continue;
+      above += c.offsetHeight + gap;
+    }
+    // The scale note sits on the stage's bottom edge.
+    const note = this.glassScaleEl ? this.glassScaleEl.offsetHeight + 4 : 0;
+    return { w: Math.max(100, this.stageEl.clientWidth - padX), h: Math.max(100, this.stageEl.clientHeight - padY - above - note) };
+  }
+
   // The glass is drawn at its true resolution and scaled to fit the stage, so
-  // what is placed here lands on the same pixel of the real panel.
+  // what is placed here lands on the same pixel of the real panel. A
+  // fit-the-window panel is the other way round: its page IS the stage, at
+  // 100 %, and it follows every resize.
   fitGlass() {
     if (!this.bezelEl || !this.stageEl) return;
     const bezel = 12;
+    const room = this.stageRoom();
+    if (this.isFitScreen()) {
+      const size = fitPageSize(room.w - bezel * 2, room.h - bezel * 2, this.panel.widgets);
+      if (size.width !== this.panel.width || size.height !== this.panel.height) {
+        this.panel.width = size.width;
+        this.panel.height = size.height;
+        this.surfaceEl.style.width = `${size.width}px`;
+        this.surfaceEl.style.height = `${size.height}px`;
+        this.scheduleEngineGlass();
+      }
+    }
     const outerW = this.panel.width + bezel * 2;
     const outerH = this.panel.height + bezel * 2;
-    const availW = Math.max(100, this.stageEl.clientWidth - 32);
-    const tabsH = this.pageTabsEl ? this.pageTabsEl.offsetHeight + 8 : 0;
-    const availH = Math.max(100, this.stageEl.clientHeight - 48 - tabsH);
-    const s = Math.min(availW / outerW, availH / outerH, 1.5);
+    const s = this.isFitScreen() ? 1 : Math.min(room.w / outerW, room.h / outerH, 1.5);
     this.glassScale = s;
     this.bezelEl.style.transform = `scale(${s})`;
     this.glassFitEl.style.width = `${Math.floor(outerW * s)}px`;
     this.glassFitEl.style.height = `${Math.floor(outerH * s)}px`;
     if (this.glassScaleEl) {
-      this.glassScaleEl.textContent = `${this.panel.width} × ${this.panel.height} px · shown at ${Math.round(s * 100)}%`;
+      this.glassScaleEl.textContent = this.isFitScreen()
+        ? `${this.panel.width} × ${this.panel.height} px · fits the window`
+        : `${this.panel.width} × ${this.panel.height} px · shown at ${Math.round(s * 100)}%`;
     }
     this.scheduleWires();
   }
@@ -1968,9 +2064,13 @@ export class TouchPanelApp {
 
       el.innerHTML = def.render({ ...w, label: esc(w.label), subtitle: esc(w.subtitle), style: this.effectiveStyle(w) })
         + `<span class="w-port ${nBound ? 'bound' : ''}" title="Drag onto a variable to wire this control"></span>`
-        + (nBound ? `<span class="w-badge" title="${nBound} connection(s) wired — every element of an array counts">${nBound}</span>` : '');
+        + (nBound ? `<span class="w-badge" title="${nBound} connection(s) wired — every element of an array counts">${nBound}</span>` : '')
+        + RESIZE_EDGES.map(d => `<span class="w-size" data-edge="${d}" title="Drag to resize"></span>`).join('');
 
       el.querySelector('.w-port').addEventListener('mousedown', (e) => this.startPortDrag(e, w));
+      // Every control is scaled the same way, whatever draws it: the handles
+      // belong to the stand-in, which is the control's box on the glass.
+      el.querySelectorAll('.w-size').forEach(hd => hd.addEventListener('mousedown', (e) => this.startResize(e, w, el, hd.dataset.edge)));
 
       // Make widget draggable on surface
       el.addEventListener('mousedown', (e) => {
@@ -2024,7 +2124,10 @@ export class TouchPanelApp {
           clearTimeout(holdTimer);
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
-          if (copied || dw.x !== origX || dw.y !== origY) this.changed();
+          if (copied || dw.x !== origX || dw.y !== origY) {
+            this.changed();
+            if (this.isFitScreen()) this.fitGlass();
+          }
         };
 
         window.addEventListener('mousemove', onMove);
@@ -2035,6 +2138,37 @@ export class TouchPanelApp {
     });
     this.fitGlass();
     this.scheduleEngineGlass();
+  }
+
+  /* Drag one of a control's handles: n / s / e / w edges and the corners. The
+     box is the control's geometry (x, y, w, h), saved like a move. */
+  startResize(e, w, el, edge) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.selectWidget(w.id);
+    const start = { x: e.clientX, y: e.clientY, wx: w.x, wy: w.y, ww: w.w, wh: w.h };
+    const onMove = (me) => {
+      const g = resizeBox(start, edge, (me.clientX - start.x) / this.glassScale, (me.clientY - start.y) / this.glassScale);
+      Object.assign(w, g);
+      el.style.left = `${w.x}px`;
+      el.style.top = `${w.y}px`;
+      el.style.width = `${w.w}px`;
+      el.style.height = `${w.h}px`;
+      this.renderTableFieldsOnly();
+      this.scheduleWires();
+      this.scheduleEngineGlass();
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (w.x !== start.wx || w.y !== start.wy || w.w !== start.ww || w.h !== start.wh) {
+        this.changed();
+        if (this.isFitScreen()) this.fitGlass();
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   }
 
   renderTable() {
@@ -2172,6 +2306,10 @@ export class TouchPanelApp {
         const yInput = row.querySelector('[data-field="y"]');
         if (xInput) xInput.value = w.x;
         if (yInput) yInput.value = w.y;
+        const wInput = row.querySelector('[data-field="w"]');
+        const hInput = row.querySelector('[data-field="h"]');
+        if (wInput) wInput.value = w.w;
+        if (hInput) hInput.value = w.h;
       }
     });
   }

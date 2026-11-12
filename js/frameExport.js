@@ -68,6 +68,8 @@ export const CONTROL_TO_FRAME = {
   crosspoints: '_GuiButtonToggler',   // a row of buttons, one element (channel) each
   matrix: '_GuiMatrix',               // buses × sources, one element (channel) per cell
 };
+/* Controls that are an array of elements: their frame's numbers size each element. */
+const ARRAY_TYPES = new Set(['crosspoints', 'matrix']);
 const FADER_H = '_GuiFaderHorizontal';
 const BUTTON_MOMENTARY = '_GuiButton';
 
@@ -288,13 +290,28 @@ export function widgetToField(w, style = {}, index = 0) {
   // box width is written as a CSS length: in the engine's ButtonToggler a
   // NUMBER layout.width / height is each BUTTON's size, not the row's, so a
   // number here stretched every crosspoint across the glass.
+  // Only an ARRAY's own numbers stay as they came (a toggler's layout.height is
+  // each button's). Every other device field is drawn at the control's box:
+  // the box IS the widget, so moving or resizing the control on the glass moves
+  // and scales what the engine draws (a needle meter sizes its face from
+  // geometry, a trend chart its plot from a NUMBER layout.height) — keeping the
+  // frame's numbers drew a 320 × 220 meter round a 260 × 160 box and a 320 px
+  // chart over a 50 px one, neither of which a handle could reach.
   const ownLayout = own && isObj(field.layout) ? field.layout : null;
+  const array = ARRAY_TYPES.has(type);
+  const keepH = own && array && ownLayout && ownLayout.height != null;
   if (!own) field.geometry = { ...(isObj(field.geometry) ? field.geometry : {}), width: wpx, height: hpx };
+  else if (!array) {
+    // The engine pads the wrapper by padx / pady; the face fits inside that.
+    const padx = num(ownLayout?.padx) || 0; const pady = num(ownLayout?.pady) || 0;
+    field.geometry = { ...(isObj(field.geometry) ? field.geometry : {}),
+      width: Math.max(10, wpx - 2 * padx), height: Math.max(10, hpx - 2 * pady) };
+  }
   if (type === 'meter' && !lib) field.geometry.orientation = wpx > hpx ? 'horiz' : 'vert';
   field.layout = {
     ...(isObj(field.layout) ? field.layout : {}),
     width: own ? `${wpx}px` : wpx,
-    height: ownLayout && ownLayout.height != null ? ownLayout.height : own ? `${hpx}px` : hpx,
+    height: keepH ? ownLayout.height : own && (array || typeof ownLayout?.height !== 'number') ? `${hpx}px` : hpx,
     ...gridPlace(w),
     position: 'absolute', left: Math.max(0, Math.round(num(w.x) || 0)), top: Math.max(0, Math.round(num(w.y) || 0)),
   };

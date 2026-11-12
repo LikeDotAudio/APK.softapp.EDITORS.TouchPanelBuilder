@@ -280,3 +280,30 @@ test('a device frame field goes back as it came: its key, options, button height
   assert.equal(fields.Open_Cmd.hidden, true);
   assert.equal(fields.Close_Cmd.komand_handler.command, 'Close_Channels');
 });
+
+test('a device frame field is drawn at its control\'s box: a needle meter and a trend chart move and scale with it', async () => {
+  const { panelFromPresented } = await import('../js/devicePanel.js');
+  const doc = { key: 'dmm', device: { type: 'DMM', model: '34401A' }, placements: [{ at: 'Instruments/9_DMM', frames: [
+    { path: 'DMM/DMM.json', content: { DMM: { type: 'OcaBin', blocks: {
+      M: { type: 'OcaBlock', fields: {
+        Reading: { type: '_NeedleVUMeter', layout: { height: 220, width: 320, padx: 10, pady: 10 }, geometry: { width: 320, height: 220 } } } },
+      T: { type: 'OcaBlock', fields: {
+        Trend_Chart: { type: '_GuiTrendChart', layout: { height: 320, width: '100%' } } } } } } } }] }] };
+  const p = panelFromPresented(doc, { width: 1280, height: 800 });
+  const vu = p.widgets.find(w => w.type === 'vu');
+  const tr = p.widgets.find(w => w.type === 'trace');
+  // the box is the size the frame draws, not a stock size
+  assert.deepEqual([vu.w, vu.h], [320, 220]);
+  assert.deepEqual([tr.w, tr.h], [1256, 320]);
+  // moved and resized on the glass -> the engine draws it there, at that size
+  Object.assign(vu, { x: 400, y: 300, w: 200, h: 140 });
+  Object.assign(tr, { w: 600, h: 200 });
+  const fields = Object.assign({}, ...Object.values(Object.values(panelToFrame({ ...p, width: 1280, height: 800 }))[0].blocks).map(b => b.fields));
+  assert.deepEqual(fields.Reading.geometry, { width: 180, height: 120 }, 'the face fits inside the padded box');
+  assert.equal(fields.Reading.layout.left, 400);
+  assert.equal(fields.Reading.layout.top, 300);
+  assert.equal(fields.Reading.layout.width, '200px');
+  assert.equal(fields.Reading.layout.height, 140);
+  assert.equal(fields.Trend_Chart.layout.height, 200, 'a number: the chart reads its plot height from it');
+  assert.equal(fields.Trend_Chart.layout.width, '600px');
+});

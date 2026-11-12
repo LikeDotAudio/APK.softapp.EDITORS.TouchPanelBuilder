@@ -68,8 +68,10 @@
     .canvas-stage {
       background: radial-gradient(circle at 50% 50%, #1e1e24 0%, #121212 100%);
       display: flex;
-      align-items: center;
-      justify-content: center;
+      /* safe: a page bigger than the stage scrolls from its top-left corner
+         instead of being centred off the reachable edge. */
+      align-items: safe center;
+      justify-content: safe center;
       padding: 16px;
       overflow: auto;
     }
@@ -98,7 +100,10 @@
     iframe.engine-glass { position: absolute; top: 0; left: 0; border: 0; z-index: 0; pointer-events: none; background: transparent; }
     .touchpanel-surface { z-index: 1; }
     .touchpanel-surface.engine-on { background: transparent !important; }
-    .touchpanel-surface.engine-on .touch-widget > :not(.w-port):not(.w-badge) { opacity: 0; }
+    .touchpanel-surface.engine-on .touch-widget > :not(.w-port):not(.w-badge):not(.w-size) { opacity: 0; }
+    /* Under engine glass the stand-in is invisible: its box shows on hover, so
+       what the engine draws is found, grabbed and scaled where it is drawn. */
+    .touchpanel-surface.engine-on .touch-widget:hover { outline: 1px dashed var(--osc-accent-primary); }
     #btn-engine-glass.on { color: var(--osc-text-primary); border-color: var(--osc-accent-primary); background: var(--osc-bg-input); }
 
     .glass-scale {
@@ -424,6 +429,25 @@
       text-align: center;
       z-index: 3;
     }
+
+    /* Resize handles: every control, four edges and four corners (the ● port
+       keeps the middle of the right edge). Shown on the selected control. */
+    .touch-widget .w-size { position: absolute; z-index: 2; display: none; }
+    .touch-widget.selected .w-size { display: block; }
+    .touch-widget .w-size[data-edge="n"], .touch-widget .w-size[data-edge="s"] { left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
+    .touch-widget .w-size[data-edge="e"], .touch-widget .w-size[data-edge="w"] { top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
+    .touch-widget .w-size[data-edge="n"] { top: -4px; }
+    .touch-widget .w-size[data-edge="s"] { bottom: -4px; }
+    .touch-widget .w-size[data-edge="e"] { right: -4px; }
+    .touch-widget .w-size[data-edge="w"] { left: -4px; }
+    .touch-widget .w-size[data-edge="nw"], .touch-widget .w-size[data-edge="ne"],
+    .touch-widget .w-size[data-edge="sw"], .touch-widget .w-size[data-edge="se"] {
+      width: 10px; height: 10px; z-index: 4; background: var(--osc-accent-primary); border: 1px solid #000; border-radius: 2px;
+    }
+    .touch-widget .w-size[data-edge="nw"] { top: -5px; left: -5px; cursor: nwse-resize; }
+    .touch-widget .w-size[data-edge="ne"] { top: -5px; right: -5px; cursor: nesw-resize; }
+    .touch-widget .w-size[data-edge="sw"] { bottom: -5px; left: -5px; cursor: nesw-resize; }
+    .touch-widget .w-size[data-edge="se"] { bottom: -5px; right: -5px; cursor: nwse-resize; }
 
     .touch-widget.drop-target { outline: 2px dashed var(--osc-status-success) !important; }
     .touchpanel-surface.drop-target { box-shadow: inset 0 0 0 2px var(--osc-status-success); }

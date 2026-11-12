@@ -69,7 +69,7 @@ const SIZE = {
   knob: [90, 100], fader: [70, 220], faderH: [240, 60], button: [130, 60],
   selector: [220, 220], meter: [45, 220], vu: [260, 160], readout: [170, 50],
   rig: [230, 0], nab: [230, 0],
-  ltp: [70, 220], mdp: [180, 180], cmdp: [220, 220], tile: [140, 90],
+  ltp: [70, 220], mdp: [180, 180], cmdp: [220, 220], tile: [140, 90], trace: [320, 180],
 };
 
 const MARGIN = 12;
@@ -403,8 +403,23 @@ function frameSize(type, field, rowW) {
     const h = 8 + 34 + (ch + 3) * ((field.buses || []).length || 1);
     return [Math.min(rowW, w), h];
   }
-  if (type === 'readout' && pct) return [Math.round(rowW * pct) - GAP, SIZE.readout[1]];
-  return null;
+  // Any other field is as big as the frame says (layout first, then geometry,
+  // as the engine reads them), so its control's box is the box the engine
+  // draws — a trend chart is not a 170 × 50 readout with a 320 px chart
+  // spilling out of it.
+  const dw = pct ? Math.round(rowW * pct) - (type === 'readout' ? GAP : 0)
+    : pxOf(lay.width) ?? pxOf(field.geometry?.width);
+  const dh = pxOf(lay.height) ?? pxOf(field.geometry?.height);
+  if (dw == null && dh == null) return null;
+  const [bw, bh] = SIZE[type] || SIZE.readout;
+  return [Math.min(rowW, dw ?? bw), dh ?? bh];
+}
+
+/* 320 or "320px" -> 320; anything else (a %, "auto", unset) -> null. */
+function pxOf(v) {
+  if (typeof v === 'number') return v > 0 ? v : null;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/.exec(String(v ?? ''));
+  return m && Number(m[1]) > 0 ? Number(m[1]) : null;
 }
 
 /**
