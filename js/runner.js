@@ -450,9 +450,15 @@ function render() {
   const tabs = $('run-tabs');
   tabs.innerHTML = '';
   // Inside an OS window whose own strip already holds the GUI file's pages
-  // (?tabs=0, the frame found), this strip carries only the pages added after
-  // them (RIG, NAB, TRACE), so nothing in the deck is out of reach.
-  const listed = state.hostFramed ? p.pages.filter(pg => !pg.source) : p.pages;
+  // (?tabs=0, the frame found), this strip carries only what that strip cannot
+  // reach: the open frame's continuation pages (SYSTEM ADMIN 2, 3 — one frame
+  // too tall for one glass) and the pages added after the GUI file's (RIG, NAB,
+  // TRACE), so nothing in the deck is out of reach.
+  const src = (pg) => (pg && pg.source && String(pg.source.path || '')) || '';
+  const here = src(p.pages.find(pg => pg.id === state.page));
+  const run = here ? p.pages.filter(pg => src(pg) === here) : [];
+  const listed = state.hostFramed
+    ? p.pages.filter(pg => !pg.source || (run.length > 1 && src(pg) === here)) : p.pages;
   tabs.hidden = !listed.length;
   for (const pg of listed) {
     const b = document.createElement('button');
