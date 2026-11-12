@@ -22,6 +22,7 @@ const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(new URL('../config/discovered.json', import.meta.url).href) : Promise.resolve({}));
 import {
   controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
+  idnBound,
 } from './runPanel.js';
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
 import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from './tracePanel.js';
@@ -216,7 +217,7 @@ function listen() {
           idnEl.title = `Device IDN: ${idn}`;
         }
         for (const w of state.panel.widgets) {
-          if (/identity|idn|make\s*·\s*model/i.test(w.label) || w.komand?.command === 'Read_IDN') {
+          if (idnBound(w, state.write)) {
             w.value = idn;
             draw(w);
           }
@@ -519,7 +520,7 @@ async function start() {
       idnEl.title = `Device IDN: ${rawIdn}`;
     }
     for (const w of state.panel.widgets) {
-      if (/identity|idn|make\s*·\s*model/i.test(w.label) || w.komand?.command === 'Read_IDN') {
+      if (idnBound(w, state.write)) {
         w.value = rawIdn;
       }
     }

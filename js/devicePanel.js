@@ -333,6 +333,28 @@ function isStatic(field) {
     && !field.device_state && !(field.komand_handler && field.komand_handler.command);
 }
 
+/* WHERE A FIELD'S VALUE ARRIVES (owner, 2026-11-12: "this touch panel... and
+   the devices interface should be the same"). The frame says it, in order:
+     komand_listen_topic                 its own readback topic;
+     topic, on a device_state field OR a komand_readout one
+                                         a readout that names its topic listens
+                                         THERE — the 4263A's "Status, primary,
+                                         secondary" is {komand_readout, topic:
+                                         <box>/Read}, the box's raw answer, and
+                                         the OS window shows it from there;
+     komand_handler.target               a control's box;
+   and only a readout that names no topic at all falls back to the box's
+   identity reply (Reading/Read_IDN, beside its Write). It used to take that
+   fallback for every komand_readout, so the run panel showed *IDN? where the
+   device window showed the measurement. */
+export function addressOf(key, field) {
+  const f = field || {};
+  if (f.komand_listen_topic) return f.komand_listen_topic;
+  if (f.topic && (f.device_state || f.komand_readout)) return f.topic;
+  if (f.komand_handler && f.komand_handler.target) return f.komand_handler.target;
+  return f.komand_readout || /identity/i.test(String(key || '')) ? 'Reading/Read_IDN' : '';
+}
+
 /* "40%" of a row, or null. */
 function pctOf(v) {
   const m = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(String(v ?? ''));
@@ -467,7 +489,7 @@ export function panelFromPresented(doc, opts = {}) {
           label: label.toUpperCase(),
           x: 0, y: 0, w, h,
           page: '',
-          address: field.komand_listen_topic || (field.device_state && field.topic) || field.komand_handler?.target || (field.komand_readout || /identity/i.test(key) ? 'Reading/Read_IDN' : ''),
+          address: addressOf(key, field),
           channel: 1,
           bindings: [],
         };

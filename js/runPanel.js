@@ -129,6 +129,16 @@ export function readbackOf(widget, writeTopic = '') {
   return `${target.slice(0, -'/Write'.length)}/Reading/${h.command}`;
 }
 
+/** Is this control bound to the box's identity reply? Its readback is
+    <box>/Reading/Read_IDN, or it fires Read_IDN itself. A label is not a
+    binding: "Make · Model" is the panel's own words (its value_default) and an
+    *IDN? answer written over it was a reading invented for it (2026-11-12). */
+export function idnBound(widget, writeTopic = '') {
+  if (!widget) return false;
+  if (widget.komand && widget.komand.command === 'Read_IDN') return true;
+  return /\/Reading\/Read_IDN$/.test(readbackOf(widget, writeTopic));
+}
+
 /** The topics a running panel listens to: each control's readback, never a Write topic. */
 export function readbackTopics(widgets, writeTopic = '') {
   const map = new Map();

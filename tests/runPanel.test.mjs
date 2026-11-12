@@ -166,3 +166,12 @@ test('rotary selector and needle VU meter rotate to match current value and doma
   assert.equal(readbackOf({ address: 'Reading/Read_IDN' }, 'APK.audio/System/Protocols/visa/DevttyUSB1/Write'),
     'APK.audio/System/Protocols/visa/DevttyUSB1/Reading/Read_IDN');
 });
+
+test('the IDN lands only on a control bound to it, never on a "Make · Model" by its label', async () => {
+  const { idnBound } = await import('../js/runPanel.js');
+  const LW = 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Write';
+  assert.equal(idnBound({ label: 'MAKE · MODEL', address: '' }, LW), false);
+  assert.equal(idnBound({ label: 'IDENTITY', address: 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Read' }, LW), false);
+  assert.equal(idnBound({ label: 'STATUS', address: 'Reading/Read_IDN' }, LW), true);
+  assert.equal(idnBound({ label: 'READ IDN', komand: { komand_type: 'nab', command: 'Read_IDN', target: LW } }, LW), true);
+});

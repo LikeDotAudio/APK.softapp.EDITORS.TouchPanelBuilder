@@ -336,3 +336,30 @@ test('Save writes the panel back in the device\'s frame form: a frame per source
   assert.equal(doc.frames.length, 3);
   assert.equal(doc.block.pages[1].source.card.id, 'aux');
 });
+
+/* The 4263A's LCR Instrument frame, as NODE.BareMetal presents it (2026-11-12):
+   a komand_readout that names the box's /Read topic listens THERE — the
+   measurement the OS device window shows — not on Reading/Read_IDN. */
+test('a komand_readout with a topic listens on its topic; only a topicless one falls back to Read_IDN', () => {
+  const LW = 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Write';
+  const READ = 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Read';
+  const lcr = {
+    key: '4263A_3145J01840',
+    device: { type: 'LCR', model: '4263A', serial: '3145J01840', resource: 'TCPIP::44.44.44.222::gpib7,11::INSTR', write_topic: LW },
+    placements: [{ at: 'Instruments/8_LCR', frames: [{ path: '0_LCR_Instrument/0_LCR_Instrument.json', content: frame('LCR_Instrument', {
+      Make_Model: { type: '_TextInput', label: { En: 'Make · Model' }, value_default: 'HP / Agilent / Keysight · 4263A', read_only: true },
+      Fetch_Existing: { type: '_GuiActuator', label: { inactive: { text: { En: 'FETCH READING (:FETCh?)' } } },
+        komand_handler: { enable: true, komand_type: 'nab', sub_path: 'LCR', command: 'Fetch_Existing', target: LW, model: '4263A' } },
+      Reading_Readout: { type: '_TextInput', label: { En: 'Status, primary, secondary' }, value_default: '---',
+        komand_readout: true, read_only: true, topic: READ },
+      Bare_Readout: { type: '_TextInput', label: { En: 'Bare' }, komand_readout: true, read_only: true },
+    }) }] }],
+  };
+  const p = panelFromPresented(lcr);
+  const by = (l) => p.widgets.find(w => w.label === l);
+  assert.equal(by('STATUS, PRIMARY, SECONDARY').address, READ);
+  assert.equal(by('BARE').address, 'Reading/Read_IDN');
+  assert.equal(by('MAKE · MODEL').address, '', 'the panel\'s own words: bound to nothing');
+  assert.equal(by('MAKE · MODEL').behavior.default, 'HP / Agilent / Keysight · 4263A');
+  assert.equal(by('FETCH READING (:FETCH?)').address, LW);
+});
