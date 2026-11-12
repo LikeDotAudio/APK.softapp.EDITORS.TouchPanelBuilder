@@ -24,5 +24,5 @@ Design a touch panel on the real glass of a real panel, wire any control to anyt
 Wire by dragging a variable onto a control (or onto bare glass to make one), a control's ● port onto a variable, or ＋. Push and hold a control to copy it with all its wiring. When several commands can each give a control its information (two or more Get / Nab), each one is drawn as its own labelled source feeding the control from the left.
 
 <!-- wiki:smoke -->
-**Smoke test** — ✅ PASS 3/3 since 2026-11-04 21:28 EST — [results](Documentation/%F0%9F%A7%A9Manual%20and%20Artifacts/SMOKE.md)
+**Smoke test** — ✅ PASS 3/3 since 2026-11-12 00:40 EST — [results](Documentation/%F0%9F%A7%A9Manual%20and%20Artifacts/SMOKE.md)
 <!-- /wiki:smoke -->
