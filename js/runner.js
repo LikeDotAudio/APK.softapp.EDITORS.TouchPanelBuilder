@@ -15,7 +15,7 @@
    drawn, every control says it cannot send, and nothing is pretended. */
 
 import { CONTROL_DEFINITIONS, widgetStyleVars } from './controls.js';
-import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables } from './devicePanel.js';
+import { linkQuery, linkSearch, isPanelFor, panelFromPresented, panelFromVariables, presentedFromPart, partUrl } from './devicePanel.js';
 import { ControlLibrary, modelKey } from './library.js';
 // The app's discovery tunables, through the shared client (ROAD-3502).
 const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
@@ -32,7 +32,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
 const W = 1280;
 const H = 800;
 
-const state = { panel: null, page: '', link: null, write: '', key: '', bus: null, on: new Set(), els: new Map() };
+const state = { panel: null, page: '', link: null, write: '', key: '', bus: null, on: new Set(), els: new Map(), template: false };
 
 function say(text, ms = 3500) {
   const el = $('say');
@@ -90,7 +90,23 @@ function rigTopicOf(writeTopic) {
   return key && C && C.Topics.captures ? C.Topics.captures.topic({ kind: 'Rig', capture: C.captureSegment(key) }) : '';
 }
 
+/* A BIM PART'S OWN PANEL, NO UNIT (?bim=<part>, ROAD-3687): the library's OPEN TOUCH
+   PANEL on a part. The template is drawn as the node would stamp it; nothing is bound
+   to a box, so nothing is sent (fire() refuses) and nothing read is shown. */
+async function partPanel(id) {
+  try {
+    const r = await fetch(partUrl(id), { cache: 'no-store' });
+    if (!r.ok) return null;
+    const part = await r.json();
+    const doc = presentedFromPart(part);
+    const p = doc ? panelFromPresented(doc, { width: W, height: H }) : null;
+    if (p) p.name = `${part.name || part.model || id} TOUCH PANEL`.toUpperCase();
+    return p;
+  } catch (_) { return null; }
+}
+
 async function loadPanel(want) {
+  if (want.bim) return partPanel(want.bim);
   const doc = await presented(want);
   if (doc) return panelFromPresented(doc, { placement: want.placement, width: W, height: H });
   try {
@@ -123,6 +139,7 @@ function publish(msgs) {
 }
 
 function fire(w, value, args = null) {
+  if (state.template) { say('A part\'s panel template: no unit is bound, so nothing is sent.'); return false; }
   if (!handlerFor(w) && w.direct) {
     // A network device's own control topic: no KOMAND between (ROAD-3523).
     if (!publish(directMessages(w, value))) { say('No broker: nothing was sent.'); return false; }
@@ -399,6 +416,7 @@ function attach(el, w) {
 
 /* The release edge, without the config again: KOMAND drops a falsy DO/NAB. */
 function publishRelease(w) {
+  if (state.template) return;
   if (w.direct && !handlerFor(w)) return;   // the plugin acts on the press; a release is nothing to it
   const h = handlerFor(w, state.write);
   if (!h || !h.target || !state.bus) return;
@@ -443,7 +461,7 @@ function render() {
   const first = p.pages[0] && p.pages[0].id;
   for (const w of p.widgets.filter(x => (x.page || first) === state.page)) {
     const el = document.createElement('div');
-    el.className = `tw${handlerFor(w) || w.direct ? '' : ' unbound'}${state.on.has(w.id) ? ' on' : ''}`;
+    el.className = `tw${(handlerFor(w) || w.direct) && !state.template ? '' : ' unbound'}${state.on.has(w.id) ? ' on' : ''}`;
     Object.assign(el.style, { left: `${w.x}px`, top: `${w.y}px`, width: `${w.w}px`, height: `${w.h}px` });
     Object.entries(widgetStyleVars({ style: w.style || {} })).forEach(([k, v]) => el.style.setProperty(k, v));
     state.els.set(w.id, el);
@@ -466,9 +484,10 @@ function fit() {
 
 async function start() {
   const want = linkQuery(location.search);
-  if (!want.model) { $('run-name').textContent = 'NO DEVICE NAMED (?model=…)'; return; }
-  $('run-name').textContent = `${want.model} — LOADING…`;
+  if (!want.model && !want.bim) { $('run-name').textContent = 'NO DEVICE NAMED (?model=…)'; return; }
+  $('run-name').textContent = `${want.model || want.bim} — LOADING…`;
   $('run-edit').href = `./index.html${linkSearch(want, '')}`;
+  if (want.bim) { startTemplate(want); return; }
   const [generated, box, bus, families] = await Promise.all([loadPanel(want), findBox(want), connectBus(), familyRoles()]);
   // The panel saved for this box runs first (ROAD-3503), unless a placement was asked for.
   const topic = bus && !want.placement
@@ -518,6 +537,26 @@ async function start() {
   setInterval(busState, 2000);
   render();
   listen();
+}
+
+/* The template, drawn: no box, no bus, no saved panel — a picture of what a box of
+   this part would present, every control saying it cannot send. */
+async function startTemplate(want) {
+  const panel = await partPanel(want.bim);
+  if (!panel) { $('run-name').textContent = `${want.bim}: THIS PART CARRIES NO PANEL TEMPLATE`; return; }
+  state.template = true;
+  state.panel = panel;
+  state.key = panel.deviceId;
+  state.write = '';
+  const asked = want.page && panel.pages.find(pg => pg.name.toUpperCase() === want.page.toUpperCase());
+  state.page = asked ? asked.id : (panel.pages[0] && panel.pages[0].id);
+  $('run-name').textContent = panel.name.replace(/ TOUCH PANEL$/, '');
+  document.title = `${$('run-name').textContent} · Touch Panel`;
+  $('run-from').textContent = 'from its BIM part';
+  pill('box-pill', 'TEMPLATE · NO UNIT — NOTHING IS SENT', 'kinda');
+  pill('bus-pill', 'NO BUS', 'dead');
+  $('bus-pill').title = 'a template is drawn without the bus';
+  render();
 }
 
 window.addEventListener('resize', fit);

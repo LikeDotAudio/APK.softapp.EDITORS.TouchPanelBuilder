@@ -520,18 +520,115 @@ export function panelFromPresented(doc, opts = {}) {
   };
 }
 
-/** What the link asked for: ?model=&family=&resource=&serial=&placement=&page= */
+/** What the link asked for: ?model=&family=&resource=&serial=&placement=&page=
+    and ?bim=<maker>/<model> — a BIM part's own panel template, no unit (ROAD-3687). */
 export function linkQuery(search) {
   const q = new URLSearchParams(search || '');
   const get = k => (q.get(k) || '').trim();
-  return {
+  const out = {
     model: get('model'), family: get('family'), resource: get('resource'),
     serial: get('serial'), protocol: get('protocol'), placement: get('placement'),
     page: get('page'),
   };
+  if (get('bim')) out.bim = get('bim');
+  return out;
 }
 
-const LINK_KEYS = ['model', 'family', 'serial', 'resource', 'protocol', 'placement', 'page'];
+const LINK_KEYS = ['model', 'family', 'serial', 'resource', 'protocol', 'placement', 'page', 'bim'];
+
+/* ------------------------------------------------- a BIM part's panel template */
+
+/** Where a part's whole record is read: BIM's /api/bim on this page's own origin
+    (the gateway, :8080's proxy and the library's :8160 all answer it). */
+export function partUrl(id) {
+  return `/api/bim/parts/${String(id || '').split('/').map(encodeURIComponent).join('/')}`;
+}
+
+const TOKEN = /\$\{([A-Za-z_]+)\}/g;
+const fill = (s, tokens) => s.replace(TOKEN, (_, k) => (k in tokens ? tokens[k] : ''));
+function stamp(v, tokens) {
+  if (typeof v === 'string') return fill(v, tokens);
+  if (Array.isArray(v)) return v.map(x => stamp(x, tokens));
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[fill(k, tokens)] = stamp(x, tokens);
+    return out;
+  }
+  return v;
+}
+const markedN = (v) => (typeof v === 'string' ? v.includes('${n}')
+  : Array.isArray(v) ? v.some(markedN)
+    : v && typeof v === 'object' ? Object.entries(v).some(([k, x]) => k.includes('${n}') || markedN(x)) : false);
+
+/** One template frame as the node would stamp it for a box of this model, with no
+    box: a block (or array entry) named with ${n} repeated once per channel the
+    model declares (none declared: dropped, never shown as "${n}"), each copy's
+    handler told its channel, then the model's words filled in. What only a box
+    knows — its resource, its topics, its slot — is left empty: a template names
+    no unit (the node's panel_template/channels, in miniature). */
+function stampFrame(content, tokens, channels) {
+  const repeat = (v) => {
+    if (Array.isArray(v)) {
+      const out = [];
+      for (const x of v) {
+        if (!markedN(x)) { out.push(repeat(x)); continue; }
+        for (let i = 1; i <= channels; i += 1) out.push(stamp(repeat(x), { n: String(i), chan: String(i) }));
+      }
+      return out;
+    }
+    if (!v || typeof v !== 'object') return v;
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (!k.includes('${n}')) { out[k] = repeat(x); continue; }
+      for (let i = 1; i <= channels; i += 1) {
+        const copy = stamp(repeat(x), { n: String(i), chan: String(i) });
+        (function tell(node) {
+          if (Array.isArray(node)) { node.forEach(tell); return; }
+          if (!node || typeof node !== 'object') return;
+          if (node.komand_handler && typeof node.komand_handler === 'object') {
+            node.komand_handler.params = { ...(node.komand_handler.params || {}), chan: String(i), n: String(i) };
+          }
+          Object.values(node).forEach(tell);
+        }(copy));
+        out[fill(k, { n: String(i) })] = copy;
+      }
+    }
+    return out;
+  };
+  return stamp(repeat(content), tokens);
+}
+
+/**
+ * A BIM part's panel template (part.panel: {template, frames: {"<F>.json": …,
+ * "<F>_N.json": …}, descriptor}) as a presented document panelFromPresented reads:
+ * one TEMPLATE placement, the part's own frames (the group frame <F>_N.json, the
+ * bank of N boxes, only when the family has nothing else), and a device that is
+ * the part — model and part id, no resource, no serial, no write topic, so nothing
+ * it draws can reach a box (ROAD-3687). → null when the part carries no panel.
+ */
+export function presentedFromPart(part) {
+  const panel = part && part.panel;
+  const frames = panel && panel.frames;
+  if (!frames || typeof frames !== 'object') return null;
+  const d = (panel.descriptor && typeof panel.descriptor === 'object') ? panel.descriptor : {};
+  const channels = Math.max(0, Math.floor(Number(d.channels) || 0));
+  const model = String(part.model || d.model || '');
+  const family = String(panel.template || d.type || part.class || '');
+  const tokens = {
+    model, family, name: String(part.name || model), manufacturer: String(part.manufacturer || d.manufacturer || ''),
+    channels: channels ? String(channels) : '', all_traces: channels === 2 ? 'BOTH TRACES' : `ALL ${channels} TRACES`,
+  };
+  const all = Object.entries(frames).filter(([, c]) => c && typeof c === 'object');
+  const own = all.filter(([path]) => !/_N\.json$/i.test(path));
+  const use = own.length ? own : all;
+  if (!use.length) return null;
+  return {
+    key: String(part.id || model),
+    template: true,
+    device: { model, type: family, part: String(part.id || ''), serial: '', resource: '' },
+    placements: [{ at: 'Template', frames: use.map(([path, content]) => ({ path, content: stampFrame(content, tokens, channels) })) }],
+  };
+}
 
 /** The query a panel is reopened by — the inverse of linkQuery. Other
     parameters already on the page (?solo=, the shell's own) are kept. */
