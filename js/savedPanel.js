@@ -23,7 +23,7 @@ import { panelToFrame, frameKey } from './frameExport.js';
     [{ path, content }]. The OS shows these in the device's window in place of
     its template's (OS Apps/Frames/bus-panels withSavedTouchPanel), so what was
     edited is what the window shows. */
-export function framesOf(panel) {
+export function framesOf(panel, opts = {}) {
   const p = panel || {};
   const pages = Array.isArray(p.pages) ? p.pages : [];
   const groups = new Map();
@@ -37,7 +37,9 @@ export function framesOf(panel) {
   for (const [path, g] of groups) {
     const ids = new Set(g.pages.map(pg => pg.id));
     const one = { ...p, pages: g.pages, widgets: (p.widgets || []).filter(w => ids.has(w.page)) };
-    const doc = panelToFrame(one);
+    // At the addresses the device window gives its fields (ROAD-3697), so the
+    // window shows what is lit on the saved panel as it does on the template.
+    const doc = panelToFrame(one, undefined, opts);
     const bin = Object.values(doc)[0];
     if (g.src && g.src.card) bin.card = { ...g.src.card };
     const root = (g.src && g.src.root) || Object.keys(doc)[0];
@@ -58,7 +60,7 @@ export function savedTopic(guiTopic, identity) {
 }
 
 /** The retained document: the panel as a block, and the link that reopens its box. */
-export function savedDoc(panel, link, now = new Date()) {
+export function savedDoc(panel, link, now = new Date(), opts = {}) {
   const p = panel || {};
   return {
     kind: 'touch_panel',
@@ -66,10 +68,11 @@ export function savedDoc(panel, link, now = new Date()) {
     link: { ...(link || {}) },
     // The placement it was edited from, and the panel as frames for it.
     placement: p.sourcePlacement || (link && link.placement) || 'Instruments',
-    frames: framesOf(p),
+    frames: framesOf(p, opts),
     block: {
       id: p.id, name: p.name, room: p.room, width: p.width, height: p.height, screenPreset: p.screenPreset,
-      theme: p.theme, deviceId: p.deviceId, sourcePlacement: p.sourcePlacement, pages: p.pages, widgets: p.widgets,
+      theme: p.theme, deviceId: p.deviceId, sourcePlacement: p.sourcePlacement, sourceFolder: p.sourceFolder,
+      pages: p.pages, widgets: p.widgets,
     },
   };
 }

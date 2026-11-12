@@ -319,12 +319,47 @@ export function widgetToField(w, style = {}, index = 0) {
   return field;
 }
 
+/* ------------------------------------------- where a device field lives (ROAD-3697)
+
+   The engine addresses a field by where its frame sits: the device window
+   draws `<placement>/<device folder>/<frame path>` (OS bus-panels
+   devicePanelTree), so a crosspoint row's state is retained at
+   Gui/<that path, cleaned>/<block>/…/<field key>. A page the builder exports
+   names its blocks after the page, so the same field would sit at another
+   topic: the window would not show what is lit, and the editor's glass would
+   mirror nothing. So a field that came from the device's frame (and every
+   hidden field it carries) is exported with that address written out. */
+
+/** The path the device's own window draws a page's frame under, or ''. */
+export function deviceWindowPath(panel, page) {
+  const p = panel || {};
+  const src = page && page.source;
+  const at = String(p.sourcePlacement || '').replace(/^\/+|\/+$/g, '');
+  const folder = String(p.sourceFolder || '').trim();
+  if (!src || !src.path || !at || at === 'saved' || !folder) return '';
+  return `${at}/${folder}/${String(src.path).replace(/^\/+/, '')}`;
+}
+
+/** A device frame field's own topic under `prefix` (Gui/<window path>): its
+    block path, then its key. The frame file's one root bin (`root`) is not a
+    level — the engine collapses a file's single root into its folder
+    (LoaderOrchestrator). '' when it is not a device field. */
+export function deviceFieldTopic(prefix, block, key, root = '') {
+  if (!prefix || !key) return '';
+  let segs = block && block !== 'Main' ? String(block).split('/').filter(Boolean) : [];
+  if (root && segs[0] === root) segs = segs.slice(1);
+  return [prefix, ...segs, key].join('/');
+}
+
 /**
  * The panel as a Gui_Frames OcaBin document.
  * effectiveStyleFn(widget) -> the widget's effective style (theme base + theme
  * style + widget style); defaults to the same rule touchPanelApp uses.
+ * opts.prefixOf(windowPath) -> the Gui topic prefix the engine gives that path
+ * (APKContracts.Topics.gui.fromPanelPath): when given, a device frame field is
+ * exported at the address it has in the device's window (deviceWindowPath).
  */
-export function panelToFrame(panel, effectiveStyleFn) {
+export function panelToFrame(panel, effectiveStyleFn, opts = {}) {
   const p = panel || {};
   const styleOf = typeof effectiveStyleFn === 'function' ? effectiveStyleFn : defaultStyleOf(p);
   const W = num(p.width) || 1280;
@@ -337,7 +372,15 @@ export function panelToFrame(panel, effectiveStyleFn) {
   const blockKeys = new Set();
   const blocks = {};
   const byPage = new Map();
+  const prefixOf = typeof opts.prefixOf === 'function' ? opts.prefixOf : null;
+  const prefixes = new Map();
+  const roots = new Map();
   for (const pg of pages) {
+    const where = prefixOf ? deviceWindowPath(p, pg) : '';
+    if (where) {
+      try { prefixes.set(pg.id, String(prefixOf(where) || '')); } catch (_) { /* no address */ }
+      roots.set(pg.id, String((pg.source && pg.source.root) || ''));
+    }
     const key = unique(frameKey(pg.name, 'Page'), blockKeys);
     const block = {
       type: 'OcaBlock',
@@ -356,12 +399,17 @@ export function panelToFrame(panel, effectiveStyleFn) {
     // A field from the device's frame keeps its key (siblings name it: a
     // matrix's `opens` / `closes`), and the hidden fields it carries go with it.
     const key = unique(fromFrame ? frameKey(w.frame.key) : frameKey(w.label || w.type, frameKey(w.id, 'Field')), slot.used);
-    slot.block.fields[key] = widgetToField(w, styleOf(w) || {}, i);
+    const field = widgetToField(w, styleOf(w) || {}, i);
+    const prefix = fromFrame ? prefixes.get(pid) : '';
+    if (prefix && !field.topic) field.topic = deviceFieldTopic(prefix, w.frame.block, w.frame.key, roots.get(pid));
+    slot.block.fields[key] = field;
     if (fromFrame && isObj(w.frame.carried)) {
       for (const [k, f] of Object.entries(w.frame.carried)) {
         if (slot.used.has(k)) continue;
         slot.used.add(k);
-        slot.block.fields[k] = clone(f);
+        const c = clone(f);
+        if (prefix && !c.topic) c.topic = deviceFieldTopic(prefix, w.frame.block, k, roots.get(pid));
+        slot.block.fields[k] = c;
       }
     }
   });
