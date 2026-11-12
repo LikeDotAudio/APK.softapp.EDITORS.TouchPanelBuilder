@@ -414,7 +414,62 @@ function attach(el, w) {
     }, { passive: false });
     return;
   }
+  if (w.type === 'fader' && kind === 'number' && faderDrag(el, w)) return;
   el.addEventListener('click', () => (kind === 'text' ? textPop : kind === 'choose' ? choosePop : kind === 'args' ? argsPop : numberPop)(el, w));
+}
+
+/* A fader is moved, not typed: grab the cap (or touch the track) and drag;
+   the value rides the cap while the hand is on it and is SENT ONCE, on release.
+   A tap that does not move it sends nothing; double-click types an exact value. */
+function faderDrag(el, w) {
+  const b = w.behavior || {};
+  if (!(Number.isFinite(b.min) && Number.isFinite(b.max) && b.max > b.min)) return false;
+  const horiz = b.orientation === 'horizontal';
+  const step = Number.isFinite(b.step) && b.step > 0 ? b.step : (b.max - b.min) / 100;
+  const snap = (n) => {
+    const v = Math.max(b.min, Math.min(b.max, b.min + Math.round((n - b.min) / step) * step));
+    return Number(v.toFixed(Math.max(0, Math.ceil(-Math.log10(step)))));
+  };
+  const valueAt = (e) => {
+    const r = el.querySelector('.fader-track').getBoundingClientRect();
+    const along = horiz ? (e.clientX - r.left) / r.width : (r.bottom - e.clientY) / r.height;
+    const frac = Math.max(0, Math.min(1, (along - 0.1) / 0.8));   // the cap travels 10 %…90 % of the track
+    return snap(b.min + frac * (b.max - b.min));
+  };
+  const show = (n) => {                                             // move the cap + number without a redraw
+    const cap = el.querySelector('.fader-track')?.firstElementChild;
+    const pct = (10 + ((n - b.min) / (b.max - b.min)) * 80).toFixed(1);
+    if (cap) { cap.style.transition = 'none'; cap.style[horiz ? 'left' : 'bottom'] = `${pct}%`; }
+    const txt = el.querySelector('.fader-val');
+    if (txt) txt.textContent = `${n}${b.unit ? ` ${b.unit}` : ''}`;
+  };
+  el.style.touchAction = 'none';
+  let drag = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !el.querySelector('.fader-track')) return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    const was = w.value;
+    const start = parseFloat(String(was ?? '').replace(/^[^\d.+-]+/, ''));
+    const onCap = e.target.closest('.fader-track > div');
+    drag = { id: e.pointerId, was, start, now: onCap && Number.isFinite(start) ? start : valueAt(e), moved: false };
+    if (!onCap) { drag.moved = true; show(drag.now); }              // touching the track jumps the cap there
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.now = valueAt(e); drag.moved = true; show(drag.now);
+  });
+  const end = (send) => (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    if (send && d.moved && d.now !== d.start && fire(w, d.now)) w.value = `${d.now}${b.unit ? ` ${b.unit}` : ''}`;
+    else w.value = d.was;
+    draw(w);
+  };
+  el.addEventListener('pointerup', end(true));
+  el.addEventListener('pointercancel', end(false));
+  el.addEventListener('dblclick', () => numberPop(el, w));
+  return true;
 }
 
 /* The release edge, without the config again: KOMAND drops a falsy DO/NAB. */

@@ -205,9 +205,16 @@ function buttonFace(kind, label, icon) {
    wears the haze and says "—", never a made-up "1000 Hz" a person would read
    as the instrument. */
 export const HAZE = '<span class="tp-haze" title="No reading proven yet — nothing is invented">—</span>';
+/* A reading like 5.604818470080475 is shown to sensible precision (5.6); words pass through. */
+export function tidyNumber(v) {
+  const m = String(v).match(/^\s*(-?\d+\.\d{3,})(\s.*)?$/);
+  if (!m) return v;
+  return `${String(Number(Number(m[1]).toPrecision(Math.max(3, m[1].split('.')[0].replace('-', '').length + 1))))}${m[2] || ''}`;
+}
+
 const shownValue = (c) => {
   const b = c.behavior || {};
-  if (c.value !== undefined && c.value !== null && c.value !== '' && c.value !== '—') return esc(c.value);
+  if (c.value !== undefined && c.value !== null && c.value !== '' && c.value !== '—') return esc(tidyNumber(c.value));
   if (b.default !== undefined && b.default !== '') return esc(`${b.default}${b.unit ? ' ' + b.unit : ''}`);
   return HAZE;
 };
@@ -275,15 +282,15 @@ export const CONTROL_DEFINITIONS = {
       const frac = (Number.isFinite(numVal) && Number.isFinite(min) && Number.isFinite(max) && max > min)
         ? Math.max(0, Math.min(1, (numVal - min) / (max - min))) : (c.value != null && c.value !== '—' ? 0.5 : 0.3);
       const track = horiz
-        ? `<div style="height:6px; width:80%; background:#0f1115; border-radius:3px; position:relative;">
+        ? `<div class="fader-track" style="height:6px; width:80%; background:#0f1115; border-radius:3px; position:relative;">
             ${faderThumb(c.style?.faderCap, true, frac)}</div>`
-        : `<div style="width:6px; flex:1; max-height:120px; background:#0f1115; border-radius:3px; position:relative;">
+        : `<div class="fader-track" style="width:6px; flex:1; max-height:120px; background:#0f1115; border-radius:3px; position:relative;">
             ${faderThumb(c.style?.faderCap, false, frac)}</div>`;
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:6px; padding:8px 0; ${box('#181b22', '#333948', '6px')}">
           <span style="font-size:${V('fs', '10px')}; font-weight:${V('fw', '400')}; color:${V('text', '#94a3b8')};">${c.label || 'LEVEL'}</span>
           ${track}
-          <span style="font-size:9px; color:${V('accent', '#38bdf8')}; font-family:monospace;">${shownValue(c)}</span>
+          <span class="fader-val" style="font-size:9px; color:${V('accent', '#38bdf8')}; font-family:monospace;">${shownValue(c)}</span>
         </div>`;
     }
   },
