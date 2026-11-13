@@ -68,6 +68,9 @@
       border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; min-height: 150px; transition: opacity .3s, filter .3s; }
     .ei-name { font-size: 12px; font-weight: 700; color: var(--tone, #e2e8f0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ei-meter { height: 112px; }
+    /* the meter is the canvas: the face fills the tile, its words on it */
+    .ei-tile.ei-vu { padding: 0; min-height: 0; gap: 0; overflow: hidden; }
+    .ei-vu .ei-meter { height: auto; aspect-ratio: 260 / 160; }
     .ei-word { flex: 1; display: flex; align-items: center; justify-content: center; font: 700 22px monospace; color: var(--osc-text-primary, #e2e8f0);
       word-break: break-all; text-align: center; }
     .ei-foot { display: flex; justify-content: space-between; gap: 6px; font: 10px monospace; color: var(--osc-text-subtle, #64748b); }

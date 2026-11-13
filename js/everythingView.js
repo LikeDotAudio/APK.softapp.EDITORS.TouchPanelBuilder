@@ -59,13 +59,17 @@ function tileHtml(every, p, now) {
       <div class="ei-name">${esc(p.label)}</div><div class="ei-word">${esc(p.raw)}</div>${foot}</div>`;
   }
   // The needle reads the proven value only; offline or never read, it rests.
+  // THE METER IS THE CANVAS (owner 2026-11-12): name up top, number left, unit right, on the face.
+  const shown = p.value === null ? '—' : engineering(p.value, unit);
+  const cut = shown.lastIndexOf(' ');
   const meter = CONTROL_DEFINITIONS.vu.render({
     label: p.label, value: p.offline ? null : p.value,
-    shown: p.value === null ? '—' : engineering(p.value, unit),
+    number: cut > 0 ? shown.slice(0, cut) : shown, unitText: cut > 0 ? shown.slice(cut + 1) : '',
+    sub: `${p.scpi} · ${p.offline ? 'offline' : p.at ? clock(p.at) : '—'} · ${askerName(p.asker)}`,
     behavior: { unit: unit || ' ', decade: p.decade }, needle: p.colour, style: {},
   });
-  return `<div class="${cls}" data-id="${esc(p.id)}" style="--tone:${p.colour}">
-    <div class="ei-name">${esc(p.label)}</div><div class="ei-meter">${meter}</div>${foot}</div>`;
+  return `<div class="${cls} ei-vu" data-id="${esc(p.id)}" style="--tone:${p.colour}" title="${esc(p.label)} — ${esc(p.scpi)}">
+    <div class="ei-meter">${meter}</div></div>`;
 }
 
 export function mountEverythingIn(host, every, who) {

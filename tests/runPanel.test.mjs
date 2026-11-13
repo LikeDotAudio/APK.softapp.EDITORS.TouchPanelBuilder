@@ -163,7 +163,7 @@ test('rotary selector and needle VU meter rotate to match current value and doma
 
   // Needle VU meter: 10X scale, engineering notation mantissa and multiplier
   const vuEng = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '+1.70726380E+02', behavior: { unit: 'Hz' } });
-  assert.match(vuEng, /10X · ×100 Hz/);
+  assert.match(vuEng, />×100<\/text>[\s\S]*>Hz<\/text>/);
   assert.match(vuEng, />0<\/text>/);
   assert.match(vuEng, />10<\/text>/);
 

@@ -625,6 +625,16 @@ export const CONTROL_DEFINITIONS = {
       // `shown`: the caller's own words for the value (engineering prefix and unit); the needle reads `value`.
       const displayVal = c.shown != null && c.shown !== '' ? c.shown
         : c.value !== undefined && c.value !== null && c.value !== '' ? c.value : '—';
+      // THE METER IS THE CANVAS (owner 2026-11-12: "the label of the function up top …
+      // the value in text on the left, the units on the right, overlaid on the meter"):
+      // the name across the top of the face, the number bottom-left, its unit bottom-right.
+      // `number` / `unitText` from a caller that splits them; else the shown text and b.unit.
+      const number = c.number != null && c.number !== '' ? String(c.number) : String(displayVal);
+      const unitText = c.unitText != null ? String(c.unitText) : (c.number != null ? '' : (b.unit || '').trim());
+      const name = String(c.label || 'READING');
+      const nameShort = name.length > 40 ? `${name.slice(0, 39)}…` : name;
+      const sub = c.sub ? String(c.sub) : '';
+      const subShort = sub.length > 52 ? `${sub.slice(0, 51)}…` : sub;
 
       return `
         <div style="width:100%; height:100%; box-sizing:border-box; position:relative; overflow:hidden; ${box('#efe3bd', '#3b3325', '6px')}">
@@ -641,10 +651,12 @@ export const CONTROL_DEFINITIONS = {
             <path d="${arcPath(7, 8.5)}" fill="none" stroke="#d97706" stroke-width="2.5"/>
             <path d="${arcPath(8.5, 10)}" fill="none" stroke="#dc2626" stroke-width="3.5"/>
             ${ticks.join('')}
-            <text x="130" y="78" text-anchor="middle" font-family="serif" font-weight="700" font-size="14" fill="#222">VU</text>
-            <text x="130" y="94" text-anchor="middle" font-family="monospace" font-weight="700" font-size="10" fill="#475569">10X · ${esc(scaleMultText)} ${esc(unit)}</text>
-            <text x="14" y="148" font-size="10" font-weight="700" fill="#222">${esc(c.label || 'READING')}</text>
-            <text x="246" y="148" text-anchor="end" font-family="monospace" font-size="10" font-weight="700" fill="#222">${esc(displayVal)}</text>
+            <text x="130" y="17" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700" font-size="12" fill="#222"><title>${esc(name)}</title>${esc(nameShort)}</text>
+            ${subShort ? `<text x="130" y="30" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#6b5f45"><title>${esc(sub)}</title>${esc(subShort)}</text>` : ''}
+            <text x="130" y="84" text-anchor="middle" font-family="serif" font-weight="700" font-size="13" fill="#222">VU</text>
+            <text x="130" y="98" text-anchor="middle" font-family="monospace" font-weight="700" font-size="9" fill="#475569">${esc(scaleMultText === '×1' ? '' : scaleMultText)}</text>
+            <text x="12" y="152" font-family="monospace" font-size="${number.length > 9 ? Math.max(9, Math.floor(104 / (number.length * 0.6))) : 17}" font-weight="700" fill="#111">${esc(number)}</text>
+            <text x="248" y="152" text-anchor="end" font-family="monospace" font-size="14" font-weight="700" fill="#3b3325">${esc(unitText)}</text>
             <g style="transform-origin: ${cx}px ${cy}px; transform: rotate(${needleRot.toFixed(1)}deg); transition: transform 0.2s ease-out;">
               <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - needleLen}" stroke="${c.needle ? esc(c.needle) : '#111'}" stroke-width="${c.needle ? 2.5 : 2}" stroke-linecap="round" filter="url(#needle-shadow)"/>
             </g>
