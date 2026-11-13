@@ -23,7 +23,7 @@
    path): the CSV button is the registered table's exportCsv. */
 
 import { CONTROL_DEFINITIONS } from './controls.js';
-import { Everything, engineering, askerName, timeToFrac, fracToTime } from './everything.js';
+import { Everything, engineering, askerName, timeToFrac, fracToTime, stickyFull } from './everything.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -62,11 +62,16 @@ function tileHtml(every, p, now) {
   // THE METER IS THE CANVAS (owner 2026-11-12): name up top, number left, unit right, on the face.
   const shown = p.value === null ? '—' : engineering(p.value, unit);
   const cut = shown.lastIndexOf(' ');
+  const number = cut > 0 ? shown.slice(0, cut) : shown;
+  const unitText = cut > 0 ? shown.slice(cut + 1) : '';
+  // the scale in the units the number is written in, held per reading (a new prefix starts it over)
+  const n = parseFloat(number);
+  if (p.fullUnit !== unitText) { p.full = undefined; p.fullUnit = unitText; }
+  if (Number.isFinite(n)) p.full = unitText === '%' && Math.abs(n) <= 100 ? 100 : stickyFull(p.full, n);   // a percentage reads 0 … 100
   const meter = CONTROL_DEFINITIONS.vu.render({
-    label: p.label, value: p.offline ? null : p.value,
-    number: cut > 0 ? shown.slice(0, cut) : shown, unitText: cut > 0 ? shown.slice(cut + 1) : '',
+    label: p.label, value: p.offline ? null : p.value, number, unitText,
     sub: `${p.scpi} · ${p.offline ? 'offline' : p.at ? clock(p.at) : '—'} · ${askerName(p.asker)}`,
-    behavior: { unit: unit || ' ', decade: p.decade }, needle: p.colour, style: {},
+    behavior: { unit: unit || ' ', full: p.full }, needle: p.colour, style: {},
   });
   return `<div class="${cls} ei-vu" data-id="${esc(p.id)}" style="--tone:${p.colour}" title="${esc(p.label)} — ${esc(p.scpi)}">
     <div class="ei-meter">${meter}</div></div>`;

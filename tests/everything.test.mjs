@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Everything, sdkIndex, queryKey, stackParts, engineering, stickyDecade, toneOf, TONES,
-  timeToFrac, fracToTime, askerName } from '../js/everything.js';
+  timeToFrac, fracToTime, askerName , stickyFull } from '../js/everything.js';
 
 // A slice of the 34401A's own SDK (INSTRUMENT.DMM/34401A/34401A.api.json), as the bench serves it.
 const api = { endpoints: {
@@ -121,4 +121,13 @@ test('live: a named reading and its /Reply are one proof', () => {
   assert.equal(v.asker, 'komand:refresh', 'and it says who asked');
   e.takeReading('Reading/MEASure_Voltage_DC', '{"value":null}', Date.parse('2026-11-12T07:21:00Z'));
   assert.equal(v.value, null, 'a NULL reading: offline');
+});
+
+test('a linear meter holds its full scale in the units the number is written in', () => {
+  assert.equal(stickyFull(undefined, 100), 200, '100.00 mV on 0 … 200');
+  assert.equal(stickyFull(undefined, 4.98), 10);
+  assert.equal(stickyFull(undefined, 50), 100);
+  assert.equal(stickyFull(200, 150), 200, 'held while it stays on the scale');
+  assert.equal(stickyFull(200, 10), 20, 'far below: rescaled');
+  assert.equal(stickyFull(200, 0), 200);
 });

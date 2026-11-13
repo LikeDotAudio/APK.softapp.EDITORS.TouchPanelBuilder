@@ -549,76 +549,67 @@ export const CONTROL_DEFINITIONS = {
       const numVal = parseFloat(String(c.value ?? b.default ?? '').replace(/^[^\d.+-]+/, ''));
       const unit = b.unit || 'V';
       
-      // Calculate 10X mantissa and scale decade
-      let mantissa = 0;
-      let scaleMultText = '×1';
-      
-      if (Number.isFinite(numVal) && numVal !== 0) {
-        const abs = Math.abs(numVal);
-        if (abs > 1e30) {
-          mantissa = 10;
-          scaleMultText = 'OVERLOAD';
-        } else {
-          // A caller that holds the range steady (Everything in: stickyDecade) names the decade.
-          const scaleExp = Number.isFinite(b.decade) ? b.decade : Math.floor(Math.log10(abs));
-          mantissa = abs / Math.pow(10, scaleExp);
-          if (scaleExp !== 0) {
-            scaleMultText = scaleExp === 1 ? '×10' : scaleExp === 2 ? '×100' : scaleExp === 3 ? '×1k' : scaleExp === 6 ? '×1M' : scaleExp === -3 ? '×1m' : `×10^${scaleExp}`;
-          }
-        }
-      } else if (numVal === 0) {
-        mantissa = 0;
-        scaleMultText = '×1';
-      }
-
-      // 10X Scale spans 0 to 10
-      const clampedMantissa = Math.max(0, Math.min(10, mantissa));
-      
+      // THE SCALE IS THE READING'S OWN (owner 2026-11-12: "the scales are wrong on the
+      // VU meter … µs is not in dB, mV is not in dB, percent is not in dB"). A reading in
+      // dB gets the VU scale, −20 … 0 … +3, spaced as a VU meter spaces it (by voltage),
+      // red past 0. Anything else gets a LINEAR scale in the very units the number at the
+      // bottom is written in (mV, µs, %, kΩ…), 0 … full scale on 1-2-5, no red zone.
       const cx = 130;
       const cy = 145;
       const R = 96;
-      // View angle 76 deg, centered at 90 deg (standard analog VU geometry)
       const startDeg = 128;
       const sweepDeg = 76;
-      const angOf = (v) => (startDeg - (v / 10) * sweepDeg) * Math.PI / 180;
-      
-      const arcPath = (v1, v2) => {
-        const a1 = angOf(v1);
-        const a2 = angOf(v2);
-        const x1 = cx + R * Math.cos(a1);
-        const y1 = cy - R * Math.sin(a1);
-        const x2 = cx + R * Math.cos(a2);
-        const y2 = cy - R * Math.sin(a2);
+      const angOfF = (f) => (startDeg - f * sweepDeg) * Math.PI / 180;     // f: 0 … 1 across the arc
+      const at = (f, r) => [cx + r * Math.cos(angOfF(f)), cy - r * Math.sin(angOfF(f))];
+      const arcF = (f1, f2) => {
+        const [x1, y1] = at(f1, R); const [x2, y2] = at(f2, R);
         return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${R} ${R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`;
       };
-      
+      const shownUnit = String(c.unitText != null ? c.unitText : (b.unit || '')).trim();
+      const isDb = /^db/i.test(shownUnit) || (!shownUnit && /^db/i.test(String(b.unit || '')));
+      // the needle reads the number as written at the bottom (its display units)
+      const disp = c.number != null && c.number !== '' ? parseFloat(String(c.number).replace(/^[^\d.+-]+/, '')) : numVal;
+      const fmtTick = (v) => { const r = +v.toPrecision(3); return String(Math.abs(r) < 1e-12 ? 0 : r); };
       const ticks = [];
-      for (let i = 0; i <= 10; i++) {
-        const rad = angOf(i);
-        const isMajor = i % 2 === 0;
-        const tickLen = isMajor ? 10 : 6;
-        const x1 = cx + R * Math.cos(rad);
-        const y1 = cy - R * Math.sin(rad);
-        const x2 = cx + (R - tickLen) * Math.cos(rad);
-        const y2 = cy - (R - tickLen) * Math.sin(rad);
-        const stroke = i >= 8.5 ? '#dc2626' : (i >= 7 ? '#d97706' : '#222');
-        ticks.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${isMajor ? 2 : 1}"/>`);
-        
-        if (i < 10) {
-          const subRad = angOf(i + 0.5);
-          const sx1 = cx + R * Math.cos(subRad);
-          const sy1 = cy - R * Math.sin(subRad);
-          const sx2 = cx + (R - 4) * Math.cos(subRad);
-          const sy2 = cy - (R - 4) * Math.sin(subRad);
-          ticks.push(`<line x1="${sx1.toFixed(1)}" y1="${sy1.toFixed(1)}" x2="${sx2.toFixed(1)}" y2="${sy2.toFixed(1)}" stroke="#444" stroke-width="0.75"/>`);
+      const tick = (f, len, stroke, w) => {
+        const [x1, y1] = at(f, R); const [x2, y2] = at(f, R - len);
+        ticks.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${stroke}" stroke-width="${w}"/>`);
+      };
+      const label = (f, text, fill) => {
+        const [tx, ty] = at(f, R - 19);
+        ticks.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${text.length > 4 ? 8 : 10}" font-family="system-ui, sans-serif" font-weight="700" fill="${fill}">${esc(text)}</text>`);
+      };
+      let frac = 0, arcs = '', centre = '', over = false;
+      if (isDb) {
+        const TOP = Math.pow(10, 3 / 20);
+        const fOf = (db) => Math.max(0, Math.min(1, Math.pow(10, db / 20) / TOP));
+        for (const db of [-20, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3]) {
+          const red = db > 0;
+          tick(fOf(db), [-20, -10, -5, 0, 3].includes(db) ? 10 : 6, red ? '#dc2626' : '#222', [-20, -10, -5, 0, 3].includes(db) ? 2 : 1);
+          if ([-20, -10, -7, -5, -3, 0, 3].includes(db)) label(fOf(db), db > 0 ? `+${db}` : String(db), red ? '#dc2626' : '#222');
         }
-
-        if (isMajor) {
-          const tx = cx + (R - 19) * Math.cos(rad);
-          const ty = cy - (R - 19) * Math.sin(rad);
-          ticks.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-family="system-ui, sans-serif" font-weight="700" fill="${stroke}">${i}</text>`);
+        arcs = `<path d="${arcF(0, fOf(0))}" fill="none" stroke="#222" stroke-width="2"/><path d="${arcF(fOf(0), 1)}" fill="none" stroke="#dc2626" stroke-width="3.5"/>`;
+        centre = 'VU';
+        if (Number.isFinite(disp)) { frac = fOf(disp); over = disp > 3; }
+      } else {
+        // full scale: the caller's (held steady by Everything in), else the next 1-2-5 above |value| × 1.25
+        const nice = (x) => { if (!(x > 0)) return 1; const e10 = Math.pow(10, Math.floor(Math.log10(x))); const m = x / e10; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e10; };
+        // a range the panel declares (behavior.min / max) wins; it is in the same units
+        const declared = Number.isFinite(b.max) && Number.isFinite(b.min ?? 0) && b.max > (b.min ?? 0);
+        const lo = declared ? (b.min ?? 0) : 0;
+        const full = declared ? b.max : Number.isFinite(b.full) && b.full > 0 ? b.full : nice(Math.abs(Number.isFinite(disp) ? disp : 0) * 1.25);
+        for (let i = 0; i <= 10; i++) {
+          tick(i / 10, i % 2 === 0 ? 10 : 6, '#222', i % 2 === 0 ? 2 : 1);
+          if (i < 10) tick((i + 0.5) / 10, 4, '#444', 0.75);
+          if (i % 2 === 0) label(i / 10, fmtTick(lo + (full - lo) * i / 10), '#222');
         }
+        arcs = `<path d="${arcF(0, 1)}" fill="none" stroke="#222" stroke-width="2"/>`;
+        centre = '';
+        if (Number.isFinite(disp)) { frac = declared ? (disp - lo) / (full - lo) : Math.abs(disp) / full; over = frac > 1; }
+        if (Math.abs(numVal) > 1e30) { frac = 1; over = true; }
       }
+      const clampedMantissa = Math.max(0, Math.min(1, frac)) * 10;
+      const scaleMultText = over ? 'OVER' : '';
 
       const needleRot = -38 + (clampedMantissa / 10) * 76;
       const needleLen = R + 4;
@@ -647,14 +638,12 @@ export const CONTROL_DEFINITIONS = {
                 <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.4"/>
               </filter>
             </defs>
-            <path d="${arcPath(0, 7)}" fill="none" stroke="#222" stroke-width="2"/>
-            <path d="${arcPath(7, 8.5)}" fill="none" stroke="#d97706" stroke-width="2.5"/>
-            <path d="${arcPath(8.5, 10)}" fill="none" stroke="#dc2626" stroke-width="3.5"/>
+            ${arcs}
             ${ticks.join('')}
             <text x="130" y="17" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700" font-size="12" fill="#222"><title>${esc(name)}</title>${esc(nameShort)}</text>
             ${subShort ? `<text x="130" y="30" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#6b5f45"><title>${esc(sub)}</title>${esc(subShort)}</text>` : ''}
-            <text x="130" y="84" text-anchor="middle" font-family="serif" font-weight="700" font-size="13" fill="#222">VU</text>
-            <text x="130" y="98" text-anchor="middle" font-family="monospace" font-weight="700" font-size="9" fill="#475569">${esc(scaleMultText === '×1' ? '' : scaleMultText)}</text>
+            ${centre ? `<text x="130" y="84" text-anchor="middle" font-family="serif" font-weight="700" font-size="13" fill="#222">${centre}</text>` : ''}
+            ${scaleMultText ? `<text x="130" y="98" text-anchor="middle" font-family="monospace" font-weight="700" font-size="9" fill="#dc2626">${esc(scaleMultText)}</text>` : ''}
             <text x="12" y="152" font-family="monospace" font-size="${number.length > 9 ? Math.max(9, Math.floor(104 / (number.length * 0.6))) : 17}" font-weight="700" fill="#111">${esc(number)}</text>
             <text x="248" y="152" text-anchor="end" font-family="monospace" font-size="14" font-weight="700" fill="#3b3325">${esc(unitText)}</text>
             <g style="transform-origin: ${cx}px ${cy}px; transform: rotate(${needleRot.toFixed(1)}deg); transition: transform 0.2s ease-out;">

@@ -161,11 +161,20 @@ test('rotary selector and needle VU meter rotate to match current value and doma
   assert.match(r0, /class="sel-pos" data-pos="0" data-v="VOLT"/);
   assert.match(r0, /class="sel-pos" data-pos="3" data-v="FREQ"/);
 
-  // Needle VU meter: 10X scale, engineering notation mantissa and multiplier
+  // Not in dB: a LINEAR scale in the reading's own units, 0 … the next 1-2-5 above it (owner 2026-11-12)
   const vuEng = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'READING', value: '+1.70726380E+02', behavior: { unit: 'Hz' } });
-  assert.match(vuEng, />×100<\/text>[\s\S]*>Hz<\/text>/);
   assert.match(vuEng, />0<\/text>/);
-  assert.match(vuEng, />10<\/text>/);
+  assert.match(vuEng, />500<\/text>/, '170.7 Hz on a 0 … 500 Hz scale');
+  assert.match(vuEng, />Hz<\/text>/);
+  assert.doesNotMatch(vuEng, />VU<\/text>|×100/, 'not a VU scale, no multiplier');
+  // In dB: the VU scale, −20 … +3, red past 0
+  const vuDb = CONTROL_DEFINITIONS.vu.render({ type: 'vu', label: 'LEVEL', value: 0, number: '0.0', unitText: 'dB', behavior: {} });
+  assert.match(vuDb, />VU<\/text>/);
+  assert.match(vuDb, />-20<\/text>[\s\S]*>\+3<\/text>/);
+  // a tile's held full scale, in its display units: 100.00 mV on 0 … 200 mV
+  const vuMv = CONTROL_DEFINITIONS.vu.render({ label: 'Amplitude', value: 0.1, number: '100.00', unitText: 'mV', behavior: { unit: 'V', full: 200 } });
+  assert.match(vuMv, />200<\/text>/);
+  assert.match(vuMv, /rotate\(0\.0deg\)/, 'half scale: the needle upright');
 
   // Identity / IDN readback mapping
   assert.equal(readbackOf({ address: 'Reading/Read_IDN' }, 'APK.audio/System/Protocols/visa/DevttyUSB1/Write'),

@@ -164,6 +164,19 @@ export function engineering(value, unit = '') {
   return `${m.toFixed(digits)} ${p}${unit}`.trim();
 }
 
+/** A linear meter's full scale in the units its number is WRITTEN in (100.00 mV → 200):
+    the next 1-2-5 above |value| × 1.25, held while the value stays between a twelfth of it
+    and it, so a wandering reading does not flick the range. 0 keeps the last (or 1). */
+export function stickyFull(prev, value) {
+  const a = Math.abs(Number(value));
+  if (!Number.isFinite(a) || a === 0) return Number.isFinite(prev) && prev > 0 ? prev : 1;
+  if (Number.isFinite(prev) && prev > 0 && a <= prev && a >= prev / 12) return prev;
+  const x = a * 1.25;
+  const e10 = 10 ** Math.floor(Math.log10(x));
+  const m = x / e10;
+  return +((m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e10).toPrecision(6);
+}
+
 /** A meter's decade (10^d is its full scale ÷ 10), held while the value stays on
     that scale, so nearby readings do not flick the range back and forth. */
 export function stickyDecade(prev, value) {
