@@ -22,7 +22,7 @@ const loadDiscoveredConfig = () => (window.APKSoftapp?.discoveredConfig
   ? window.APKSoftapp.discoveredConfig(new URL('../config/discovered.json', import.meta.url).href) : Promise.resolve({}));
 import {
   controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
-  idnBound,
+  idnBound, stateTopic, matrixHandlers, pickNext, litOf,
 } from './runPanel.js';
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
 import { Everything, sdkIndex } from './everything.js';
@@ -35,7 +35,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
 const W = 1280;
 const H = 800;
 
-const state = { panel: null, page: '', link: null, write: '', key: '', bus: null, on: new Set(), els: new Map(), template: false };
+const state = { panel: null, page: '', link: null, write: '', key: '', bus: null, on: new Set(), els: new Map(), template: false,
+  picked: new Map() };   // widget id -> [values] lit: what this application last commanded (runPanel.pickNext)
 
 function say(text, ms = 3500) {
   const el = $('say');
@@ -141,6 +142,58 @@ function publish(msgs) {
   return true;
 }
 
+/* A press on an array of buttons: what goes out (a matrix opens before it closes,
+   each through its own handler; a row closes the pressed channel), then the lamps
+   and the retained state. Lit only when every message was handed to the broker. */
+function pick(w, value) {
+  if (state.template) { say('A part\'s panel template: no unit is bound, so nothing is sent.'); return false; }
+  const multi = /^(multi|many|multiple)$/i.test(String((w.field && w.field.selection_mode) || ''));
+  const step = pickNext(w.type, state.picked.get(w.id) || [], value, { multi });
+  const gui = window.APKContracts.Topics.gui.topic;
+  const msgs = [];
+  if (w.type === 'matrix') {
+    const h = matrixHandlers(w, state.write);
+    if (step.open.length && !h.open) { say(`${w.label}: no open command to break ${step.open.join(',')}`); return false; }
+    if (step.close.length && !h.close) { say(`${w.label}: no close command`); return false; }
+    if (!(h.open || h.close || {}).target) { say(`${w.label}: the box was not found on the bus`); return false; }
+    if (step.open.length) msgs.push(...fireMessages(controlTopic(gui, state.key, `${w.id}.open`), h.open, step.open.join(',')));
+    if (step.close.length) msgs.push(...fireMessages(controlTopic(gui, state.key, `${w.id}.close`), h.close, step.close.join(',')));
+  } else if (step.close.length) {
+    const h = handlerFor(w, state.write);
+    if (!h) { say(`${w.label}: not wired to a command`); return false; }
+    if (!h.target) { say(`${w.label}: the box was not found on the bus, so there is nowhere to send ${h.command}`); return false; }
+    msgs.push(...fireMessages(controlTopic(gui, state.key, w.id), h, step.close.join(',')));
+  }
+  if (msgs.length && !publish(msgs)) { say('No broker: nothing was sent.'); return false; }
+  state.picked.set(w.id, step.lit);
+  paintPicked(w);
+  // the application's state, retained (never a command: no /config teaches KOMAND this topic)
+  const link = state.bus;
+  if (link && link.connected) link.publish(stateTopic(gui, state.key, w.id), JSON.stringify({ value: step.lit, at: Date.now() }), { qos: 1, retain: true });
+  say([step.open.length ? `OPEN ${step.open.join(',')}` : '', step.close.length ? `CLOSE ${step.close.join(',')}` : ''].filter(Boolean).join(' → ') || 'cleared', 2000);
+  return true;
+}
+
+/* The lamps of an array of buttons: lit = the field's active face, else its inactive one. */
+function paintPicked(w) {
+  const el = state.els.get(w.id);
+  if (!el) return;
+  const lit = new Set(state.picked.get(w.id) || []);
+  const st = (w.field && w.field.style) || {};
+  const A = st.active || {}, I = st.inactive || {};
+  el.querySelectorAll('.tp-el[data-el]').forEach((b) => {
+    const on = lit.has(String(b.dataset.el));
+    const f = on ? A : I;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    if (f.bg_color) b.style.background = f.bg_color;
+    if (f.text_color) b.style.color = f.text_color;
+    if (f.border_color) b.style.borderColor = f.border_color;
+    b.style.fontWeight = on ? 'bold' : '';
+    b.style.boxShadow = on && f.glow_intensity ? `inset 0 0 ${Math.min(40, f.glow_intensity * 3)}px ${f.border_color || '#FF9900'}` : '';
+  });
+}
+
 function fire(w, value, args = null) {
   if (state.template) { say('A part\'s panel template: no unit is bound, so nothing is sent.'); return false; }
   if (!handlerFor(w) && w.direct) {
@@ -204,6 +257,15 @@ function listen() {
     link.subscribe(w.rig, (_t, text) => {
       const traces = tracesFromRig(text);
       if (traces.length) { w.trace = traces; draw(w); }
+    });
+  }
+  // THE APPLICATION'S STATE of each array of buttons, retained per box: every window
+  // and a reload light what was last commanded (owner 2026-11-12).
+  for (const w of state.panel.widgets) {
+    if (touchKind(w) !== 'pick') continue;
+    link.subscribe(stateTopic(window.APKContracts.Topics.gui.topic, state.key, w.id), (_t, text) => {
+      state.picked.set(w.id, litOf(text));
+      paintPicked(w);
     });
   }
   // Instrument IDN readback from KOMAND Nab/Get
@@ -335,12 +397,14 @@ function attach(el, w) {
   if (kind === 'none') { el.title = 'Shows a reading; not wired to a command'; return; }
   if (kind === 'pick') {
     // One button of the row: its own value through the field's handler (its
-    // converter included — a preset in kHz goes out in Hz). Unproven until the
-    // unit's readback says so (haze until proven): only a "sent" flash here.
+    // converter included — a preset in kHz goes out in Hz); a matrix cell through
+    // its carried open / close, break-before-make on its bus.
     el.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-el]');
       if (!btn || !el.contains(btn)) return;
-      if (fire(w, btn.dataset.el)) {
+      // THE APPLICATION'S STATE (owner 2026-11-12): lit = what was last commanded — a
+      // listen-only box (the 3235) never says what it is set to. Saved retained per box.
+      if (pick(w, btn.dataset.el)) {
         btn.classList.remove('sent'); void btn.offsetWidth; btn.classList.add('sent');
       }
     });
@@ -508,6 +572,7 @@ function draw(w) {
   const shown = w.value !== undefined && w.value !== null && w.value !== '' ? w.value : ownWords ? w.behavior.default : '—';
   const behavior = { ...(w.behavior || {}), default: '' };
   el.innerHTML = def.render({ ...w, behavior, label: esc(w.label), subtitle: esc(w.subtitle), value: esc(shown), style: w.style || {} });
+  if (touchKind(w) === 'pick') paintPicked(w);
 }
 
 function render() {

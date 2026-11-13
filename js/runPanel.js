@@ -85,13 +85,77 @@ export function touchKind(widget) {
   // a generator's frequency presets): each button fires its OWN value, as the
   // engine's ButtonToggler publishes the option's value — never a press of the
   // whole row (that sent "FREQuency true / false", 2026-11-12).
-  if (widget.type === 'crosspoints') return 'pick';
+  if (widget.type === 'crosspoints' || widget.type === 'matrix') return 'pick';
   if (Array.isArray(b.args) && b.args.length) return 'args';
   if (Array.isArray(b.values) && b.values.length) return 'choose';
   if (widget.type === 'button') return b.mode === 'momentary' || v === 'do' ? 'press' : 'toggle';
   if (v === 'do' || v === 'nab' || v === 'get') return 'press';
   if (['knob', 'fader', 'ltp', 'selector', 'tile', 'readout', 'mdp', 'cmdp'].includes(widget.type)) return 'number';
   return 'press';
+}
+
+/* THE APPLICATION'S STATE OF AN ARRAY OF BUTTONS (owner 2026-11-12: "the state
+   lamps are based on the application, not the machine current state … it is not
+   saving state or changing colours"). A crosspoint row or a matrix lights what
+   this application last commanded — a listen-only box like the 3235 never says
+   what it is set to, so the command IS the state. Held retained per box and
+   control under <control topic>/State, so every window and a reload agree. */
+
+/** Where a control's application state is kept (retained): beside its control topic. */
+export function stateTopic(guiTopic, panelKey, widgetId) {
+  return `${controlTopic(guiTopic, panelKey, widgetId)}/State`;
+}
+
+/** A matrix's own open and close handlers (its carried Open_Cmd / Close_Cmd), aimed at the box. */
+export function matrixHandlers(widget, writeTopic = '') {
+  const f = (widget && widget.field) || {};
+  const carried = (widget && widget.frame && widget.frame.carried) || {};
+  const of = (name) => {
+    const h = carried[name] && carried[name].komand_handler;
+    if (!h || h.enable === false || !h.command) return null;
+    return { ...h, enable: true, target: h.target || writeTopic };
+  };
+  return { open: of(f.opens || 'Open_Cmd'), close: of(f.closes || 'Close_Cmd') };
+}
+
+/** A matrix cell's bus: the tens of its channel (slot*100 + bus*10 + source). */
+const busOfCell = (v) => Math.floor((Number(v) % 100) / 10);
+
+/**
+ * One press on an array of buttons: the lit set after it, and what goes out.
+ *   crosspoints  radio (the toggler's default): only the pressed one is lit,
+ *                CLOSE <it>; multi: it toggles, CLOSE when it lights
+ *   matrix       break-before-make per bus (CrossMatrix.jsx): pressing a lit
+ *                cell OPENs it; pressing another OPENs what was lit on its bus,
+ *                then CLOSEs it
+ * Returns { lit: [values], open: [values], close: [values] }.
+ */
+export function pickNext(type, lit, value, opts = {}) {
+  const was = new Set((lit || []).map(String));
+  const v = String(value);
+  const next = new Set(was);
+  const open = [], close = [];
+  if (type === 'matrix') {
+    if (was.has(v)) { next.delete(v); open.push(v); } else {
+      for (const c of was) if (busOfCell(c) === busOfCell(v)) { next.delete(c); open.push(c); }
+      next.add(v); close.push(v);
+    }
+  } else if (opts.multi) {
+    if (was.has(v)) next.delete(v); else { next.add(v); close.push(v); }
+  } else {
+    next.clear(); next.add(v); close.push(v);
+  }
+  return { lit: [...next].sort(), open: open.sort(), close };
+}
+
+/** The lit values a retained State payload holds ({value: [..]} or a comma list). */
+export function litOf(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return [];
+  let v = raw;
+  try { const j = JSON.parse(raw); v = j && typeof j === 'object' && !Array.isArray(j) && 'value' in j ? j.value : j; } catch (_) { /* a list */ }
+  const list = Array.isArray(v) ? v : String(v).split(',');
+  return list.map(x => String(x).trim()).filter(Boolean).sort();
 }
 
 /** A number typed on the glass, kept inside the control's own range. */

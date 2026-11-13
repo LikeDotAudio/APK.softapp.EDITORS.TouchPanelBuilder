@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   controlTopic, handlerFor, fireMessages, directMessages, touchKind, clampValue, readingText, readbackTopics, readbackOf, brokerFor,
+  stateTopic, matrixHandlers, pickNext, litOf,
 } from '../js/runPanel.js';
 import { CONTROL_DEFINITIONS } from '../js/controls.js';
 
@@ -178,4 +179,38 @@ test('the IDN lands only on a control bound to it, never on a "Make · Model" by
   assert.equal(idnBound({ label: 'IDENTITY', address: 'APK.audio/System/Protocols/visa/Device/LCR/4263A/Dev711/Read' }, LW), false);
   assert.equal(idnBound({ label: 'STATUS', address: 'Reading/Read_IDN' }, LW), true);
   assert.equal(idnBound({ label: 'READ IDN', komand: { komand_type: 'nab', command: 'Read_IDN', target: LW } }, LW), true);
+});
+
+// ------------------------------------------------------------- the application's state of an array of buttons
+
+test('a crosspoint row lights what was last commanded: radio by default, multi toggles', () => {
+  assert.deepEqual(pickNext('crosspoints', [], '801'), { lit: ['801'], open: [], close: ['801'] });
+  assert.deepEqual(pickNext('crosspoints', ['801'], '802'), { lit: ['802'], open: [], close: ['802'] });
+  assert.deepEqual(pickNext('crosspoints', ['801'], '802', { multi: true }).lit, ['801', '802']);
+  assert.deepEqual(pickNext('crosspoints', ['801', '802'], '801', { multi: true }), { lit: ['802'], open: [], close: [] });
+});
+
+test('a matrix is break-before-make per bus: another source on the bus opens first; the lit one opens', () => {
+  assert.deepEqual(pickNext('matrix', [], '011'), { lit: ['011'], open: [], close: ['011'] });
+  assert.deepEqual(pickNext('matrix', ['011', '022'], '013'), { lit: ['013', '022'], open: ['011'], close: ['013'] }, 'bus 1 only');
+  assert.deepEqual(pickNext('matrix', ['013', '022'], '013'), { lit: ['022'], open: ['013'], close: [] });
+  assert.deepEqual(pickNext('matrix', ['111'], '112'), { lit: ['112'], open: ['111'], close: ['112'] }, 'slot 1 counts its own buses');
+});
+
+test('the state is kept beside the control, and read back from either shape', () => {
+  assert.equal(stateTopic(gui, '3235_x', 'w_9'), 'APK.audio/Gui/TouchPanels/3235_x/w_9/State');
+  assert.deepEqual(litOf('{"value":["802","801"]}'), ['801', '802']);
+  assert.deepEqual(litOf('011,022'), ['011', '022']);
+  assert.deepEqual(litOf(''), []);
+});
+
+test('a matrix fires its own carried Open_Cmd / Close_Cmd, at the box', () => {
+  const w = { type: 'matrix', field: { opens: 'Open_Cmd', closes: 'Close_Cmd' }, frame: { carried: {
+    Open_Cmd: { komand_handler: { enable: true, komand_type: 'set', command: 'Open_Channels' } },
+    Close_Cmd: { komand_handler: { enable: true, komand_type: 'set', command: 'Close_Channels' } } } } };
+  const h = matrixHandlers(w, WRITE);
+  assert.equal(h.open.command, 'Open_Channels');
+  assert.equal(h.close.command, 'Close_Channels');
+  assert.equal(h.close.target, WRITE);
+  assert.equal(touchKind({ ...w, komand: { command: 'Open_Channels', komand_type: 'set' } }), 'pick');
 });
