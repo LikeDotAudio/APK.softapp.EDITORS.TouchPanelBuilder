@@ -27,7 +27,7 @@ import {
 import { savedIdentity, savedTopic, readSaved } from './savedPanel.js';
 import { Everything, sdkIndex } from './everything.js';
 import { mountEverythingIn, mountEverythingOverTime } from './everythingView.js';
-import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from './tracePanel.js';
+import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage, generatorSettings, generatorTrace } from './tracePanel.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
@@ -88,6 +88,17 @@ async function familyRoles() {
 }
 
 /** The retained rig a box's traces arrive on (Captures/Rig/<device>), or ''. */
+/* A source's TRACE page draws what it says it is putting out (tracePanel.generatorTrace),
+   until a real Trace/<channel> arrives on its rig, which always wins. */
+function settingsTrace() {
+  if (!state.panel || !state.every) return;
+  const ws = state.panel.widgets.filter(x => x.type === 'trace' && x.rig && !x.fromRig);
+  if (!ws.length) return;
+  const trace = generatorTrace(generatorSettings(state.every.points()));
+  if (!trace) return;
+  for (const w of ws) { w.trace = trace; draw(w); }
+}
+
 function rigTopicOf(writeTopic) {
   const C = window.APKContracts;
   const key = deviceKeyOf(writeTopic);
@@ -256,7 +267,7 @@ function listen() {
   for (const w of state.panel.widgets.filter(x => x.type === 'trace' && x.rig)) {
     link.subscribe(w.rig, (_t, text) => {
       const traces = tracesFromRig(text);
-      if (traces.length) { w.trace = traces; draw(w); }
+      if (traces.length) { w.trace = traces; w.fromRig = true; draw(w); }
     });
   }
   // THE APPLICATION'S STATE of each array of buttons, retained per box: every window
@@ -698,12 +709,14 @@ async function startEverything(want) {
       try { env = JSON.parse(text); } catch (_) { return; }
       const touched = state.every.hear(env, Date.now());
       if (touched.length && state.view) state.view.update(touched);
+      if (touched.length) settingsTrace();
     });
     // KOMAND's named readings: each says which question it answers (retained:
     // the last of each arrives at once, with its own time).
     link.subscribe(`${base}/Reading/#`, (t, text) => {
       const touched = state.every.takeReading(t.slice(base.length + 1), text, Date.now());
       if (touched.length && state.view) state.view.update(touched);
+      if (touched.length) settingsTrace();
     });
     // The box's status record: not connected is offline, a gap in every line.
     link.subscribe(base, (_t, text) => {

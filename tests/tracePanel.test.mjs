@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage } from '../js/tracePanel.js';
+import { rolesFor, isMonitoring, deviceKeyOf, seriesOf, toBytes, tracesFromRig, withTracePage , shortHeader, generatorSettings, generatorTrace } from '../js/tracePanel.js';
 import { CONTROL_DEFINITIONS } from '../js/controls.js';
 
 const FAMILIES = { families: { Oscilloscope: { roles: ['inputs', 'metering', 'monitoring'] }, DMM: { roles: ['inputs', 'metering'] } } };
@@ -60,4 +60,23 @@ test('the trace control draws lanes, and says when nothing has arrived', () => {
   const svg = CONTROL_DEFINITIONS.trace.render({ label: 'TRACE', trace: [{ source: 'CHAN1', points: [0, 255] }] });
   assert.match(svg, /<polyline points="0\.0,256\.0 1000\.0,0\.0"/);
   assert.match(CONTROL_DEFINITIONS.trace.render({ label: 'TRACE' }), /no trace yet/);
+});
+
+test('a generator\'s trace is drawn from what it says it puts out', () => {
+  assert.equal(shortHeader(':FUNCtion:RAMP:SYMMetry?'), 'FUNC:RAMP:SYMM');
+  assert.equal(shortHeader('VOLTage:OFFSet?'), 'VOLT:OFFS');
+  const pts = [
+    { scpi: 'FUNCtion?', value: null, raw: 'SIN' }, { scpi: ':FREQuency?', value: 1000, raw: '+1.0E+03' },
+    { scpi: ':VOLTage?', value: 2, raw: '+2.0E+00' }, { scpi: ':VOLTage:OFFSet?', value: 0, raw: '+0' },
+    { scpi: ':OUTPut?', value: 0, raw: '0' },
+  ];
+  const s = generatorSettings(pts);
+  assert.equal(s.shape, 'SIN'); assert.equal(s.freq, 1000); assert.equal(s.on, false);
+  const [t] = generatorTrace(s, 401);
+  assert.match(t.source, /SIN · 1 kHz · 2 Vpp · offset 0 V · OUTPUT OFF/);
+  assert.equal(t.points.length, 401);
+  assert.ok(Math.max(...t.points) > 230 && Math.min(...t.points) < 25, 'a full sine across the frame');
+  assert.equal(generatorSettings([{ scpi: 'FREQ?', value: 1 }]), null, 'no shape said: nothing drawn');
+  const off = generatorTrace(generatorSettings([...pts.slice(0, 3), { scpi: 'VOLT:OFFS?', value: 1, raw: '1' }]));
+  assert.ok(off[0].points[0] > 128, 'a positive offset sits above the centre');
 });
